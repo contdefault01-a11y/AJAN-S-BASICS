@@ -15,10 +15,10 @@ import { spriteTex, labelTex, iconTex, iconDataURL, sprayTex, drawTimer } from '
 import { ExerciseRunner } from './exercise.js';
 
 const $ = (id) => document.getElementById(id);
-const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize', 'sweep', 'sweepout', 'whistle', 'childmusic', 'catboypass', 'catboypass2', 'catboysee', 'catboygood', 'catboyajan', 'catboyprincipal']);
+const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize', 'sweep', 'sweepout', 'whistle', 'childmusic', 'catboypass', 'catboypass2', 'catboysee', 'catboygood', 'catboyajan', 'catboyprincipal', 'facu', 'prinbul', 'pr1', 'pr2', 'pr3', 'lockcaught']);
 const NPC_LOOK = {
   ajan: { img: 'AJAN', h: 5.6 }, principal: { img: 'PRINCIPAL', h: 5.0 }, playtime: { img: 'PLAYTIME', h: 4.1 },
-  bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 3.7 }, arts: { img: 'ARTS', h: 4.3 },
+  bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 9.9, y: -1.5 }, arts: { img: 'ARTS', h: 4.3 },
 };
 const FACES = ['FACE1', 'FACE2', 'FACE3'];
 const ACTIVE = new Set([PHASE.INTRO, PHASE.TRAINING, PHASE.COLLECT_CASH, PHASE.FAST_FOOD, PHASE.FINAL_ESCAPE]);
@@ -232,7 +232,6 @@ export class Game {
         const mesh = makeBillboard(st.tex, st.aspect, look.h);
         this.dyn.add(mesh);
         e = { id: n.id, k: n.k, mesh, look, x: n.x, z: n.z, squash: 0, img: look.img };
-        if (n.k === 'bully') e.box = null;
         this.npcs.set(n.id, e);
       }
       e.state = n.s;
@@ -248,7 +247,7 @@ export class Game {
           e.mesh.geometry = new THREE.PlaneGeometry(e.look.h * st.aspect, e.look.h).translate(0, e.look.h / 2, 0);
         }
       }
-      if (n.k === 'bully') e.box = n.b ? { x0: n.b[0], x1: n.b[1], z0: n.b[2], z1: n.b[3] } : null;
+      e.box = n.b ? { x0: n.b[0], x1: n.b[1], z0: n.b[2], z1: n.b[3] } : null;
     }
     // remote players
     const seen = new Set();
@@ -266,7 +265,7 @@ export class Game {
         r = { id: p.id, mesh, label, x: p.x, z: p.z };
         this.remotes.set(p.id, r);
       }
-      r.visible = !!p.cn && ACTIVE.has(p.ph);
+      r.visible = !!p.cn && ACTIVE.has(p.ph) && !p.hd; // nobody can see you in a locker
     }
     for (const [id, r] of this.remotes) if (!seen.has(id)) { this.dyn.remove(r.mesh, r.label); this.remotes.delete(id); }
     // objects
@@ -333,6 +332,7 @@ export class Game {
         this.sendMove();
         break;
       case 'correct': this.me.x = ev.x; this.me.z = ev.z; this.me.vx = this.me.vz = 0; break;
+      case 'unhide': if (ev.thrown) { this.shake = 1; this.app.postfx.flash = 0.3; } audio.play('door', { dedupe: false }); break;
       case 'push': this.me.push = { vx: ev.vx, vz: ev.vz, until: this.time + ev.d }; break;
       case 'stamina': this.me.stamina = Math.max(this.me.stamina, ev.v); break;
       case 'pk+': this.addPickup(ev.p); break;
@@ -471,6 +471,7 @@ export class Game {
     for (const v of this.map.vending) consider(v.wx, v.wz, 4.0, 'vending', v, 0.7);
     const cat = this.npcs.get('catboy');
     if (cat && !cat.hidden) consider(cat.x, cat.z, 4.5, 'catboy', { x: cat.x, z: cat.z }, 0.75);
+    for (const l of this.map.lockers) consider(l.x, l.z, 3.4, 'locker', l, 0.6);
     cands.sort((a, b) => a.score - b.score);
     for (const c of cands) {
       const tx = c.data.wx ?? c.data.x;
@@ -486,6 +487,7 @@ export class Game {
 
   async interact() {
     if (!ACTIVE.has(this.self.phase)) return;
+    if (this.self.hide) { net.act('locker'); return; } // climb back out
     const t = this.lookTarget();
     if (!t) return;
     if (t.kind === 'door') {
@@ -506,6 +508,9 @@ export class Game {
       this.openShop(t.data.restaurant);
     } else if (t.kind === 'catboy') {
       const res = await net.act('catboy');
+      if (!res.ok && res.err) this.toast(res.err);
+    } else if (t.kind === 'locker') {
+      const res = await net.act('locker', { id: t.data.id });
       if (!res.ok && res.err) this.toast(res.err);
     } else if (t.kind === 'vending') {
       this.toast('Use a Shiny Quarter (right-click) on this machine.');
@@ -797,7 +802,7 @@ export class Game {
     this.time += dt;
     const me = this.me;
     const active = ACTIVE.has(this.self.phase) && !this.ended;
-    const frozen = !active || !!this.ui || !!this.jump || (this.paused && this.solo) || !!(this.ex && this.ex.frozen);
+    const frozen = !active || !!this.ui || !!this.jump || !!this.self.hide || (this.paused && this.solo) || !!(this.ex && this.ex.frozen);
     if (this.ex) this.ex.tick(dt, this.keys);
 
     // ---- movement
@@ -831,8 +836,7 @@ export class Game {
     if (this.jump) { dx = 0; dz = 0; }
     if (frozen && !(me.push && this.time < me.push.until)) { dx = 0; dz = 0; me.vx = me.vz = 0; }
     const extra = [];
-    const bully = this.npcs.get('bully');
-    if (bully && bully.box && !bully.hidden) extra.push(bully.box);
+    for (const n of this.npcs.values()) if (n.box && !n.hidden) extra.push(n.box);
     const solid = this.solidTest();
     const pos = { x: me.x, z: me.z };
     if (dx || dz) moveCircle(this.map, pos, dx, dz, PLAYER_R, solid, extra);
@@ -868,7 +872,7 @@ export class Game {
     const face = (m) => { m.rotation.y = Math.atan2(cx - m.position.x, cz - m.position.z); };
     for (const e of this.npcs.values()) {
       e.mesh.visible = !e.hidden;
-      e.mesh.position.set(e.x, 0, e.z);
+      e.mesh.position.set(e.x, e.look.y || 0, e.z);
       e.squash = Math.max(0, e.squash - dt * 5);
       const bob = e.k === 'ajan' ? 1 - e.squash * 0.12 : 1 + Math.sin(this.time * 9 + e.x) * 0.015 * (e.state === 'idle' || e.state === 'closet' ? 0 : 1);
       e.mesh.scale.set(e.k === 'ajan' ? 1 + e.squash * 0.08 : 1, bob, 1);
@@ -904,6 +908,14 @@ export class Game {
     const det = this.self.det > 0;
     if (det) this.self.det = Math.max(0, this.self.det - dt);
     $('detention').classList.toggle('hidden', !det);
+    const hide = this.self.hide;
+    $('lockerview').classList.toggle('hidden', !hide);
+    if (this.self.lockerCd > 0) this.self.lockerCd = Math.max(0, this.self.lockerCd - dt);
+    if (hide) {
+      hide.left = Math.max(0, hide.left - dt);
+      $('lockerview').firstChild.textContent = 'HIDING ' + Math.ceil(hide.left) + 's  (click to get out)';
+      if (hide.left < 2.2) this.shake = Math.max(this.shake, 0.55); // it starts rattling... out you go
+    }
     if (det) $('detention').innerHTML = 'DETENTION<br>' + Math.ceil(this.self.det) + 's' + (this.self.inv.includes('keys') ? '<br><small style="font-size:40%">Use the Principal\'s Keys at the door!</small>' : '');
     if (this.world.timer && (!this.timerAcc || this.time - this.timerAcc > 0.25)) {
       this.timerAcc = this.time;
@@ -985,6 +997,7 @@ function promptFor(t, self) {
     case 'station': return 'Click: start the exercise';
     case 'counter': return 'Click: order at ' + RESTAURANTS[t.data.restaurant].name;
     case 'catboy': return 'Click: talk to the catboy';
+    case 'locker': return self.lockerCd > 0 ? 'Locker (wait ' + Math.ceil(self.lockerCd) + 's)' : 'Click: hide in the locker';
     case 'vending': return self.inv[self.sel] === 'coin' ? 'Right-click: insert the quarter' : 'Vending machine (needs a Shiny Quarter)';
   }
   return '';

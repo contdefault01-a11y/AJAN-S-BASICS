@@ -509,6 +509,33 @@ function buildProps(map) {
     addProp({ type: 'pot', x: px, z: pz, w: 0.8, d: 0.8, h: 1.2 });
   }
 
+  // red lockers against hallway walls: players can hide inside for a few seconds
+  const lockers = [];
+  const lockerCands = [];
+  for (const r of map.rooms) {
+    if (r.type !== 'hall' || r.id === 'hall_spawn') continue;
+    for (let z = r.z0; z <= r.z1; z++)
+      for (let x = r.x0; x <= r.x1; x++) {
+        if (!free(x, z) || map.room(x, z) !== r || potCells.has(x + ',' + z)) continue;
+        for (const [side, nx, nz] of [['n', 0, 1], ['s', 0, -1], ['w', 1, 0], ['e', -1, 0]]) {
+          if (map.edgeOf(x, z, side).t !== E_WALL) continue;
+          // not in a corner, so a locker never narrows a turn
+          const along = nx ? ['n', 's'] : ['w', 'e'];
+          if (along.some((a) => map.edgeOf(x, z, a).t !== E_OPEN)) continue;
+          lockerCands.push({ x, z, nx, nz });
+        }
+      }
+  }
+  for (const c of rng.shuffle(lockerCands)) {
+    if (lockers.length >= 8) break;
+    const p = cellCenter(c.x, c.z);
+    const lx = p.x - c.nx * 0.8, lz = p.z - c.nz * 0.8;
+    if (lockers.some((l) => Math.hypot(l.x - lx, l.z - lz) < 22)) continue;
+    lockers.push({ id: lockers.length, x: lx, z: lz, nx: c.nx, nz: c.nz });
+    addProp({ type: 'locker', x: lx, z: lz, w: c.nx ? 0.8 : 1.4, d: c.nx ? 1.4 : 0.8, h: 4.4, nx: c.nx, nz: c.nz });
+  }
+  map.lockers = lockers;
+
   // REF1: an EXIT sign hangs over the entrance hall
   decals.push({ type: 'exitsign', key: 'exit', x: 48.5 * C, z: 66 * C, y: 6.3, nx: 0, nz: 1, w: 1.7, h: 1.7, hanging: true });
 

@@ -9,7 +9,7 @@ const OPTIONAL = new Set(['bullysee', 'bullytake', 'bullypass']);
 // Voice lines get loudness-normalized so every character is clearly audible over the music.
 const VOICES = new Set(['menuvoice', 'start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize',
   'sweep', 'sweepout', 'whistle', 'childmusic', 'win',
-  'catboypass', 'catboypass2', 'catboysee', 'catboygood', 'catboyajan', 'catboyprincipal']);
+  'catboypass', 'catboypass2', 'catboysee', 'catboygood', 'catboyajan', 'catboyprincipal', 'facu', 'prinbul', 'pr1', 'pr2', 'pr3', 'lockcaught']);
 // Relative level of each music track (music always sits under the voices).
 export const MUSIC_LEVEL = { menu: 0.55, music1: 0.32, music2: 0.5, musicwrong: 0.75, musicescape: 0.6 };
 // STOMP.mp3 starts with ~0.86 s of silence: skip it so the hit lands on the step.

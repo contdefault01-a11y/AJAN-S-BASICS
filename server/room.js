@@ -71,7 +71,7 @@ export class Room {
   itemName(id) { return ITEMS[id] ? ITEMS[id].name : id; }
   get chase() { return this.story === STORY.CHASE; }
   // other characters only notice players once AJAN's chase has started
-  canInteract(p) { return this.chase && this.isActive(p); }
+  canInteract(p) { return this.chase && this.isActive(p) && !p.hiding; }
   npcEdgeOk(e) { return e.t === E_OPEN || (e.t === E_DOOR && !this.doors[e.d].locked); }
 
   event(ev, to = null) { this.outbox.push({ ev, to }); }
@@ -129,6 +129,8 @@ export class Room {
     p.energyUntil = 0;
     p.gotAjanCoin = false;
     p.pushUntil = 0;
+    p.hiding = null;
+    p.lockerCdUntil = 0;
     p.dirty = true;
     this.sfx('start', this.ajan, p.id);
     if (teleport) {
@@ -150,6 +152,8 @@ export class Room {
       id: p.id, phase: p.phase, ex: [...p.exercisesDone], cash: p.cash, cal: p.calories,
       inv: p.inventory, sel: p.selected,
       det: p.detention ? Math.max(0, p.detention.until - this.t) : 0,
+      hide: p.hiding ? { id: p.hiding.id, left: Math.max(0, p.hiding.until - this.t) } : null,
+      lockerCd: Math.max(0, p.lockerCdUntil - this.t),
       jump: p.jump ? { period: p.jump.period, need: p.jump.need } : null,
       quiet: Math.max(0, p.quietUntil - this.t), energy: Math.max(0, p.energyUntil - this.t),
       furious: this.furious, officeDoor: this.officeDoor, stations: this.stationTypes, story: this.story, coin: !!p.gotAjanCoin,
@@ -180,6 +184,7 @@ export class Room {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
     if (Number.isFinite(yaw)) p.yaw = yaw;
     if (p.awaitTseq && m.ts !== p.awaitTseq) return; // still waiting for the client to apply a teleport
+    if (p.hiding) return; // inside a locker you cannot move
     p.awaitTseq = 0;
     const dt = Math.max(0.03, this.t - p.lastMoveT);
     p.lastMoveT = this.t;
@@ -287,6 +292,39 @@ export class Room {
     if (msg) this.toast(p, msg);
   }
 
+  // ------------------------------------------------------------------ lockers
+  enterLocker(p, id) {
+    const l = this.map.lockers[id];
+    if (!l || !this.isActive(p) || p.detention || p.jump) return { ok: false };
+    if (Math.hypot(l.x - p.x, l.z - p.z) > 3.4) return { ok: false, err: 'Get closer to the locker.' };
+    if (this.t < p.lockerCdUntil) return { ok: false, err: "You can't hide again yet (" + Math.ceil(p.lockerCdUntil - this.t) + 's).' };
+    for (const o of this.players.values()) if (o.hiding && o.hiding.id === id) return { ok: false, err: 'Someone is already in there!' };
+    const pr = this.npcById.principal;
+    const seen = this.chase && pr.canSee(p, 38);
+    p.hiding = { id, until: this.t + 10 };
+    this.teleport(p, l.x + l.nx * 1.2, l.z + l.nz * 1.2, Math.atan2(-l.nx, -l.nz));
+    p.dirty = true;
+    this.event({ e: 'hide' }, p.id);
+    if (seen) {
+      // the Principal saw you climb in: he walks over, pulls you out and gives you detention
+      this.sfx('lockcaught', pr, p.id);
+      pr.state = 'fetch'; pr.target = p.id; pr.chaseUntil = this.t + 25; pr.goal = null;
+    }
+    return { ok: true };
+  }
+
+  leaveLocker(p, thrown) {
+    const h = p.hiding;
+    if (!h) return;
+    const l = this.map.lockers[h.id];
+    p.hiding = null;
+    p.lockerCdUntil = this.t + 40;
+    p.dirty = true;
+    this.teleport(p, l.x + l.nx * (thrown ? 2.6 : 1.4), l.z + l.nz * (thrown ? 2.6 : 1.4), p.yaw);
+    this.event({ e: 'unhide', thrown }, p.id);
+    if (thrown) this.toast(p, "You can't stay in there forever! (no hiding for 40 s)");
+  }
+
   // ------------------------------------------------------------------ rules / encounters
   ruleViolation(p) {
     if (p.sprinting && p.speed > WALK_SPEED * 1.08) return 'run';
@@ -297,6 +335,7 @@ export class Room {
 
   startDetention(p, principal) {
     if (p.detention || !this.isActive(p)) return;
+    if (p.hiding) this.leaveLocker(p, false);
     p.detentionCount++;
     const dur = 20;
     p.detention = { until: this.t + dur, dur };
@@ -309,6 +348,8 @@ export class Room {
     const dc = { x: od.x, z: od.z };
     principal.x = dc.x; principal.z = dc.z + 3; principal.path = null; principal.goal = null;
     this.sfx('principal2', principal, p.id);
+    // once he is done talking and walks off, he mutters one of his lines
+    this.timers.push({ at: this.t + 5.6, fn: () => this.sfx(this.rng.pick(['pr1', 'pr2', 'pr3']), principal, '') });
     this.toast(p, 'Detention for you. ' + dur + ' seconds!');
     this.noise(spot.x, spot.z, 9999, 2); // AJAN hears where you are
     p.dirty = true;
@@ -338,7 +379,7 @@ export class Room {
   }
 
   catchPlayer(p) {
-    if (!this.isActive(p) || this.ajan.mood !== 'angry') return;
+    if (!this.isActive(p) || p.hiding || this.ajan.mood !== 'angry') return;
     if (p.jump) this.endJumpRope(p, 'caught');
     p.detention = null;
     p.phase = PHASE.CAUGHT;
@@ -561,6 +602,7 @@ export class Room {
       }
 
       case 'catboy': return this.catboyInteract(p);
+      case 'locker': return p.hiding ? (this.leaveLocker(p, false), { ok: true }) : this.enterLocker(p, msg.id | 0);
 
       case 'enterRestaurant':
         if (p.phase === PHASE.COLLECT_CASH) {
@@ -756,6 +798,7 @@ export class Room {
       }
       if ((p.phase === PHASE.COLLECT_CASH || p.phase === PHASE.FAST_FOOD) && p.calories >= CALORIE_GOAL) this.startFinal(p);
       if (p.detention && t >= p.detention.until) this.endDetention(p, 'time');
+      if (p.hiding && t >= p.hiding.until) this.leaveLocker(p, true);
       if (p.jump && t - p.jump.start > 45) this.endJumpRope(p, 'timeout');
       if (p.phase === PHASE.FINAL_ESCAPE && p.calories >= CALORIE_GOAL) {
         for (const e of this.map.exits) {
@@ -838,7 +881,7 @@ export class Room {
     const npcs = this.npcs.map((n) => n.snapshot());
     const doors = this.doors.map((d) => (d.locked ? 'l' : d.open ? 'o' : 'c')).join('');
     const objs = this.objs.map((o) => ({ id: o.id, k: o.k, x: +o.x.toFixed(2), z: +o.z.toFixed(2), r: o.ringing ? 1 : 0 }));
-    const players = [...this.players.values()].map((p) => ({ id: p.id, n: p.name, c: p.color, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.yaw.toFixed(2), ph: p.phase, j: p.jump ? 1 : 0, d: p.detention ? 1 : 0, cn: p.connected ? 1 : 0 }));
+    const players = [...this.players.values()].map((p) => ({ id: p.id, n: p.name, c: p.color, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.yaw.toFixed(2), ph: p.phase, j: p.jump ? 1 : 0, d: p.detention ? 1 : 0, hd: p.hiding ? 1 : 0, cn: p.connected ? 1 : 0 }));
     const out = new Map();
     for (const p of this.players.values()) {
       const ev = this.outbox.filter((o) => !o.to || o.to === p.id).map((o) => o.ev);

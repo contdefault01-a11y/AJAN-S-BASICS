@@ -498,3 +498,67 @@ test('cash and calories are shared by every player, and the goal moves everyone 
   room.tick(0.05);
   assert.equal(q.phase, PHASE.FINAL_ESCAPE);
 });
+
+test('lockers: hide unseen, thrown out after 10 s, 40 s cooldown; the Principal pulls you out if he saw', () => {
+  const { room, p } = mk();
+  room.startChase(p);
+  p.phase = PHASE.TRAINING;
+  const pr = room.npcById.principal;
+  pr.x = 10; pr.z = 10; // far away
+  const l = room.map.lockers[0];
+  assert.ok(room.map.lockers.length >= 5 && room.map.lockers.length <= 10);
+  place(room, p, l.x + l.nx * 2, l.z + l.nz * 2);
+  assert.equal(room.handleAction(p, { type: 'locker', id: l.id }).ok, true);
+  assert.ok(p.hiding);
+  assert.equal(room.canInteract(p), false, 'nobody knows you are in there');
+  assert.equal(room.ajan.canSee(p), false);
+  run(room, 10.2);
+  assert.equal(p.hiding, null, 'thrown out');
+  assert.ok(room.outbox.some((o) => o.ev.e === 'unhide' && o.ev.thrown));
+  assert.equal(room.handleAction(p, { type: 'locker', id: l.id }).ok, false, 'cooldown');
+  room.t += 40;
+  // the Principal is watching this time
+  pr.x = l.x + l.nx * 2.5 + l.nz * 8; pr.z = l.z + l.nz * 2.5 + l.nx * 8;
+  room.frozenNpcs = false;
+  assert.equal(room.handleAction(p, { type: 'locker', id: l.id }).ok, true);
+  assert.ok(room.outbox.some((o) => o.ev.k === 'lockcaught'));
+  for (let i = 0; i < 80 && !p.detention; i++) room.tick(0.05);
+  assert.ok(p.detention, 'pulled out and sent to detention');
+  assert.equal(p.hiding, null);
+});
+
+test('principal: FACU in the faculty room, PRINBUL + item returned when he sees the Bully steal, pr1-3 after detention', () => {
+  const { room, p } = mk();
+  room.startChase(p);
+  p.phase = PHASE.TRAINING;
+  const pr = room.npcById.principal;
+  const b = room.npcById.bully;
+  b.placeAt({ x: 70, z: 19 });
+  pr.x = b.x + 10; pr.z = b.z; pr.state = 'wander';
+  p.inventory = ['soda', null, null];
+  place(room, p, b.x - 1.5, b.z);
+  b.update(0.05);
+  assert.equal(p.inventory[0], null, 'stolen');
+  assert.ok(room.outbox.some((o) => o.ev.k === 'prinbul'));
+  assert.equal(pr.state, 'rescue');
+  room.frozenNpcs = false;
+  for (let i = 0; i < 100 && pr.state === 'rescue'; i++) room.tick(0.05);
+  assert.ok(p.inventory.includes('soda'), 'item handed back');
+  assert.equal(pr.state, 'escort');
+  assert.equal(b.state, 'escorted');
+  for (let i = 0; i < 900 && pr.state === 'escort'; i++) room.tick(0.05);
+  assert.equal(b.state, 'gone', 'bully taken away');
+  // detention: after principal2 he says one of pr1-3
+  room.outbox.length = 0;
+  room.startDetention(p, pr);
+  for (let i = 0; i < 130; i++) room.tick(0.05);
+  assert.ok(room.outbox.some((o) => ['pr1', 'pr2', 'pr3'].includes(o.ev.k)));
+  // faculty room
+  room.endDetention(p, 'time');
+  const fac = room.map.roomById.faculty;
+  const c = cellCenter(fac.x0 + 3, fac.z0 + 3);
+  place(room, p, c.x, c.z); pr.x = c.x + 4; pr.z = c.z; pr.state = 'wander'; p.cd = {};
+  room.outbox.length = 0;
+  room.tick(0.05); room.tick(0.2);
+  assert.ok(room.outbox.some((o) => o.ev.k === 'facu'));
+});
