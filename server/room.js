@@ -7,9 +7,10 @@ import {
 } from '../shared/constants.js';
 import { buildMap, cellCenter, worldToCell, SPAWNS, E_OPEN, E_DOOR } from '../shared/map.js';
 import { makeSolidTest, resolveCircle, segmentBlocked } from '../shared/collision.js';
+import { lineOfSight } from '../shared/nav.js';
 import { makeRng, randomSeed } from '../shared/rng.js';
 import { RANDOM_TYPES, EXERCISE_INFO, generateExercise, validateExercise, validateStep } from './exercises.js';
-import { Ajan, Principal, Playtime, Bully, Sweep, Prize, Arts, fwd } from './npcs.js';
+import { Ajan, Principal, Playtime, Bully, Sweep, Prize, Arts, Catboy, fwd } from './npcs.js';
 
 let SHARED_MAP = null;
 export function getMap() {
@@ -45,8 +46,12 @@ export class Room {
     // trick; the other five rooms get the remaining exercises in a random order.
     this.stationTypes = ['pushups', 'impossible', ...this.rng.shuffle(RANDOM_TYPES.slice())];
     this.story = STORY.WELCOME;
+    // exercise progress is shared by every player in the match (late joiners get it too)
+    this.sharedEx = new Set();
+    this.coinGiven = false;
     this.ajan = new Ajan(this);
-    this.npcs = [this.ajan, new Principal(this), new Playtime(this), new Bully(this), new Sweep(this), new Prize(this), new Arts(this)];
+    this.npcs = [this.ajan, new Principal(this), new Playtime(this), new Bully(this), new Sweep(this), new Prize(this), new Arts(this), new Catboy(this)];
+    this.timers = []; // delayed events (catboy betrayals)
     this.npcById = Object.fromEntries(this.npcs.map((n) => [n.id, n]));
     this.cashSpawnedFor = 0;
     this.lastBalanceCheck = 0;
@@ -106,7 +111,7 @@ export class Room {
   resetPlayer(p, teleport = true) {
     p.phase = PHASE.INTRO;
     p.introUntil = this.t + 3;
-    p.exercisesDone = new Set();
+    p.exercisesDone = this.sharedEx;
     p.pendingEx = new Map();
     p.cash = 0;
     p.calories = 0;
@@ -121,7 +126,7 @@ export class Room {
     p.gotAjanCoin = false;
     p.pushUntil = 0;
     p.dirty = true;
-    this.sfx('start', this.ajan, p.id, { only: 1 });
+    this.sfx('start', this.ajan, p.id);
     if (teleport) {
       const sp = SPAWNS.player[0];
       const pos = cellCenter(sp[0], sp[1]);
@@ -290,7 +295,7 @@ export class Room {
   startDetention(p, principal) {
     if (p.detention || !this.isActive(p)) return;
     p.detentionCount++;
-    const dur = Math.min(45, 20 + (p.detentionCount - 1) * 5);
+    const dur = 20;
     p.detention = { until: this.t + dur, dur };
     if (p.jump) { this.npcById.playtime.endEncounter(false); p.jump = null; this.event({ e: 'jump_end', why: 'detention' }, p.id); }
     const spot = this.map.detentionSpot;
@@ -464,7 +469,7 @@ export class Room {
         if (p.jump) return { ok: false, err: 'Busy!' };
         // AJAN's lesson plan: Exercise 1, then his coin, then Exercise 2, then the rest
         if (st.id === 1 && !p.exercisesDone.has(0)) return { ok: false, err: 'AJAN: "Do Exercise 1 first!"' };
-        if (st.id === 1 && !p.gotAjanCoin && !this.chase) return { ok: false, err: 'AJAN: "Come get your coin first!"' };
+        if (st.id === 1 && !this.coinGiven && !this.chase) return { ok: false, err: 'AJAN: "Come get your coin first!"' };
         if (st.id >= 2 && !this.chase) return { ok: false, err: 'AJAN: "Finish the exercises in the entrance hall first!"' };
         const type = this.stationTypes[st.id];
         const g = generateExercise(type, this.rng, { cells: this.map.exerciseCells[st.id], station: st });
@@ -494,7 +499,7 @@ export class Room {
           // the trick question: it still counts, but AJAN loses his temper
           p.exercisesDone.add(st.id);
           if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
-          p.dirty = true;
+          for (const o of this.players.values()) o.dirty = true;
           this.startChase(p);
           return { ok: true, success: false, impossible: true, done: p.exercisesDone.size, reason: v.reason };
         }
@@ -508,7 +513,7 @@ export class Room {
         }
         p.exercisesDone.add(st.id);
         if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
-        p.dirty = true;
+        for (const o of this.players.values()) { o.dirty = true; if (o !== p) this.toast(o, p.name + ' finished Exercise ' + (st.id + 1) + '! (' + p.exercisesDone.size + '/7)'); }
         this.sfx('success', null, p.id);
         if (this.chase) this.noise(st.x, st.z, 60, 1);
         if (st.id === 0 && !this.chase) {
@@ -550,6 +555,8 @@ export class Room {
         this.toast(p, 'Playtime: "Thanks for playing!"');
         return { ok: true };
       }
+
+      case 'catboy': return this.catboyInteract(p);
 
       case 'enterRestaurant':
         if (p.phase === PHASE.COLLECT_CASH) {
@@ -647,6 +654,64 @@ export class Room {
     return { ok: false, err: 'Cannot use that.' };
   }
 
+  // ------------------------------------------------------------------ catboy
+  catboyInteract(p) {
+    const cb = this.npcById.catboy, t = this.t;
+    if (!this.chase) return { ok: false, err: 'The catboy just stares at you. "Mrrp?"' };
+    if (Math.hypot(cb.x - p.x, cb.z - p.z) > 4.5) return { ok: false, err: 'Get closer.' };
+    if (t < cb.cooldownUntil) return { ok: false, err: 'The catboy ignores you for now.' };
+    cb.cooldownUntil = t + 25;
+    cb.state = 'roam';
+    if (this.rng() < 0.5) {
+      // GOOD: an item drops next to him in the hallway
+      const item = this.rng.pick(['scissors', 'soda', 'bar', 'coin', 'keys', 'lock', 'sneakers', 'clock', 'energy']);
+      const dx = p.x - cb.x, dz = p.z - cb.z, d = Math.hypot(dx, dz) || 1;
+      this.addPickup({ kind: 'item', item, x: cb.x + (dx / d) * 1.2, z: cb.z + (dz / d) * 1.2, y: 0 });
+      this.sfx('catboygood', cb, p.id);
+      return { ok: true, outcome: 'good' };
+    }
+    if (this.rng() < 0.5) {
+      // BAD: he tells AJAN where you are; AJAN appears around the corner once the line ends
+      this.sfx('catboyajan', cb, p.id);
+      this.timers.push({ at: t + 5.5, fn: () => this.ambush(p, this.ajan) });
+      return { ok: true, outcome: 'ajan' };
+    }
+    // BAD: he calls the Principal, who rushes over and drags you to detention
+    this.sfx('catboyprincipal', cb, p.id);
+    this.timers.push({ at: t + 2.5, fn: () => this.ambush(p, this.npcById.principal) });
+    return { ok: true, outcome: 'principal' };
+  }
+
+  // put an NPC "around the corner": close to the player, out of sight, not in the same hallway
+  ambush(p, npc) {
+    if (!this.canInteract(p)) return;
+    const pc = worldToCell(p.x, p.z);
+    const myRoom = this.map.room(pc.cx, pc.cz);
+    // best: another hallway, out of sight, ~18 units away; fall back to anything out of sight
+    let best = null, bd = 1e9;
+    for (const [cx, cz] of this.map.hallCells) {
+      const c = cellCenter(cx, cz);
+      const d = Math.hypot(c.x - p.x, c.z - p.z);
+      if (d < 12 || d > 50) continue;
+      if (lineOfSight(this.map, c.x, c.z, p.x, p.z, this.doors)) continue;
+      const score = Math.abs(d - 18) + (this.map.room(cx, cz) === myRoom ? 40 : 0);
+      if (score < bd) { bd = score; best = c; }
+    }
+    if (!best) best = cellCenter(...this.map.hallCells[Math.floor(this.rng() * this.map.hallCells.length)]);
+    npc.x = best.x; npc.z = best.z; npc.path = null; npc.goal = null; npc.push = null; npc.hidden = false;
+    npc.lastProgress = { x: npc.x, z: npc.z, t: this.t };
+    if (npc === this.ajan) {
+      npc.heard = { x: p.x, z: p.z, range: 9999, priority: 3, t: this.t };
+      npc.lastSeen = { x: p.x, z: p.z, t: this.t };
+      npc.nextStomp = this.t; // the stomping starts right away
+    } else {
+      npc.state = 'fetch';
+      npc.target = p.id;
+      npc.chaseUntil = this.t + 25;
+      npc.lostAt = this.t;
+    }
+  }
+
   // The impossible answer: AJAN gets mad (AJANMAD + musicwrong + FACE3 on the client),
   // vanishes to the cafeteria and the chase is on. Everyone else becomes dangerous too.
   startChase(p) {
@@ -680,6 +745,11 @@ export class Room {
 
     for (const p of this.players.values()) {
       if (p.phase === PHASE.INTRO && t >= p.introUntil) this.setPhase(p, PHASE.TRAINING);
+      // shared progress: once the team has finished all 7, everyone moves on to the cash hunt
+      if ((p.phase === PHASE.INTRO || p.phase === PHASE.TRAINING) && p.exercisesDone.size >= EXERCISE_COUNT) {
+        if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
+        if (this.setPhase(p, PHASE.COLLECT_CASH)) this.toast(p, 'All training done! Collect cash and buy 7,000 calories at KFC or Popeyes!');
+      }
       if (p.detention && t >= p.detention.until) this.endDetention(p, 'time');
       if (p.jump && t - p.jump.start > 45) this.endJumpRope(p, 'timeout');
       if (p.phase === PHASE.FINAL_ESCAPE && p.calories >= CALORIE_GOAL) {
@@ -699,6 +769,11 @@ export class Room {
     }
 
     if (!this.frozenNpcs) for (const n of this.npcs) n.update(dt);
+    if (this.timers.length) {
+      const due = this.timers.filter((x) => t >= x.at);
+      this.timers = this.timers.filter((x) => t < x.at);
+      for (const x of due) x.fn();
+    }
 
     // doors
     this.doors.forEach((d, i) => {

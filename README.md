@@ -56,8 +56,7 @@ ignores you until the chase has started; after that they are active and a bit fa
 
 ### Characters
 
-* **Principal** – no running in the halls, no students in the Faculty room → detention (20 s,
-  +5 s each time). AJAN is told where you are. Principal's Keys open the door early.
+* **Principal** – no running in the halls, no students in the Faculty room → detention (always 20 s). AJAN is told where you are. Principal's Keys open the door early.
 * **Playtime** – 5-jump rope game (Space when the rope hits the floor). Scissors cut the rope.
 * **Bully** – blocks a hallway and takes one random item (`BULLYSEE/TAKE/PASS` – placeholders
   until supplied); with nothing to give he gets bored and leaves.
@@ -67,10 +66,15 @@ ignores you until the chase has started; after that they are active and a bit fa
 * **Arts and Crafters** (the sock) – every now and then his `childmusic.wav` plays for the whole
   school; after your 7th exercise, staring at him makes him charge and teleport you.
 * The **Principal** also blows his `whistle.mp3` now and then – everyone hears it.
+* **Catboy** – roams slowly, mumbles (`CATBOYPASS/PASS2`, more often the closer you are), and may
+  call you over (`CATBOYSEE`). Click him: 50% he drops an item next to him (`CATBOYGOOD`), 50% he
+  snitches – AJAN (`CATBOYAJAN`) or the Principal (`CATBOYPRINCIPAL`) appears around the corner.
+
+In multiplayer, exercise progress is shared by every player in the room, including late joiners.
 
 ### Getting caught / winning
 
-* Caught: the game freezes on the exact frame, a random `JUMPSCARE1-3.png` fills the bottom half of
+* Caught: the game freezes on the exact frame, a random `JUMPSCARE1-3.png` fills most of
   the screen with a random (extremely loud) `jump1-3.wav`, then a black screen with a random picture
   from `assets/random/` for 3 seconds, then the main menu.
 * Escaped: `WIN.wav` and the `congratulations.png` screen.
