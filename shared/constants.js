@@ -128,6 +128,14 @@ export const AUDIO = Object.freeze({
   mad: 'AJANMAD.mp3',
   prize: 'PRIZE.mp3',
   stomp: 'STOMP.mp3',
+  sweep: 'sweep.wav',          // Gotta Sweep is coming for you
+  sweepout: 'sweepout.wav',    // Gotta Sweep leaves his closet (everyone hears it)
+  whistle: 'whistle.mp3',      // the Principal's random whistle
+  childmusic: 'childmusic.wav', // Arts and Crafters' song
+  win: 'WIN.wav',
+  jump1: 'jump1.wav',
+  jump2: 'jump2.wav',
+  jump3: 'jump3.wav',
   // music (looping, quieter than voices)
   menu: 'musicmenu.wav',
   music1: 'music1.wav',

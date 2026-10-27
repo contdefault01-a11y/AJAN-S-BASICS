@@ -392,3 +392,45 @@ test('one player caught does not end the match for the others', () => {
   assert.equal(p.phase, PHASE.INTRO);
   assert.equal(p.exercisesDone.size, 0);
 });
+
+test('gotta sweep: loud sweepout when he leaves, sweep.wav when he comes for you, sometimes drags you to his closet', () => {
+  const { room, p } = mk(3);
+  room.startChase(p);
+  room.frozenNpcs = false;
+  const sw = room.npcById.sweep;
+  sw.nextSweep = room.t; // leave the closet now
+  for (const n of room.npcs) if (n !== sw) n.update = () => {};
+  room.tick(0.05);
+  assert.ok(room.outbox.some((o) => o.ev.k === 'sweepout' && o.ev.to === '*'), 'everyone hears him leave');
+  // stand in his path in the north hall
+  const c = cellCenter(60, 19);
+  sw.x = c.x - 10; sw.z = c.z; sw.path = null; sw.goal = null;
+  place(room, p, c.x, c.z);
+  const rng = room.rng; room.rng = Object.assign(() => 0.01, rng); // force the grab
+  let carried = false, heard = false;
+  for (let i = 0; i < 20 * 20; i++) {
+    room.tick(0.05);
+    if (room.outbox.some((o) => o.ev.k === 'sweep' && o.ev.to === p.id)) heard = true;
+    if (sw.state === 'carry') carried = true;
+    // the client follows the pushes it is sent
+    for (const o of room.outbox) if (o.ev.e === 'push' && o.to === p.id) { p.x += o.ev.vx * 0.05; p.z += o.ev.vz * 0.05; }
+    for (const o of room.outbox) if (o.ev.e === 'teleport' && o.to === p.id) { p.x = o.ev.x; p.z = o.ev.z; }
+    room.outbox = [];
+    if (carried && sw.state === 'closet') break;
+  }
+  room.rng = rng;
+  assert.ok(heard, 'sweep.wav when he comes for you');
+  assert.ok(carried, 'he grabbed the player');
+  const cell = worldToCell(p.x, p.z);
+  assert.equal(room.map.room(cell.cx, cell.cz).id, 'janitor', 'dumped in the janitor closet');
+});
+
+test("the principal's whistle and the sock's song play for everyone every now and then", () => {
+  const { room, p } = mk(4);
+  room.frozenNpcs = false;
+  p.phase = PHASE.TRAINING;
+  const keys = new Set();
+  for (let i = 0; i < 20 * 150; i++) { room.tick(0.05); for (const o of room.outbox) if (o.ev.e === 'sfx' && o.ev.to === '*') keys.add(o.ev.k); room.outbox = []; }
+  assert.ok(keys.has('whistle'));
+  assert.ok(keys.has('childmusic'));
+});

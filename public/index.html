@@ -56,7 +56,15 @@
       <div id="jump-count">0 / 5</div>
       <div id="jump-help">Press SPACE (or click) when the rope hits the floor. Scissors (right-click) cut the rope.</div>
     </div>
-    <div id="scare" class="hidden"><img src="/assets/AJANBAD.png" alt=""></div>
+    <div id="scare" class="hidden"><img id="scare-img" alt=""></div>
+    <div id="deathcard" class="hidden"><img id="deathcard-img" alt=""></div>
+    <div id="win" class="hidden">
+      <img src="/assets/congratulations.png" alt="Congratulations! You won!">
+      <div class="win-buttons">
+        <button class="mbtn" id="btn-win-again">PLAY AGAIN</button>
+        <button class="mbtn" id="btn-win-menu">MAIN MENU</button>
+      </div>
+    </div>
     <div id="clicklock" class="overlay hidden"><div class="paper small"><h2>Click to play</h2><p>Your mouse controls the camera.</p></div></div>
 
     <div id="pause" class="overlay hidden">

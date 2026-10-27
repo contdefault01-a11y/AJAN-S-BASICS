@@ -316,6 +316,9 @@ export class Principal extends Npc {
 
   update(dt) {
     const room = this.room, t = room.t;
+    // every now and then the Principal blows his whistle - loud enough for the whole school
+    if (!this.nextWhistle) this.nextWhistle = t + 25 + room.rng() * 30;
+    if (t >= this.nextWhistle) { this.nextWhistle = t + 35 + room.rng() * 45; room.sfx('whistle', this, '*'); }
     if (this.applyPush(dt)) return;
     if (t >= this.thinkAt) {
       this.thinkAt = t + 0.15;
@@ -553,6 +556,10 @@ export class Sweep extends Npc {
     this.nextSweep = 35 + room.rng() * 20;
     this.sweepUntil = 0;
     this.vel = { x: 0, z: 0 };
+    this.target = null;
+    this.carry = null;
+    this.carried = false;
+    this.thinkAt = 0;
   }
 
   update(dt) {
@@ -561,26 +568,46 @@ export class Sweep extends Npc {
       this.vel = { x: 0, z: 0 };
       if (t >= this.nextSweep) {
         this.state = 'sweeping';
-        this.sweepUntil = t + 22;
-        room.sfx('sweep', this, null);
+        this.sweepUntil = t + 24;
+        this.carried = false;
+        room.sfx('sweepout', this, '*'); // "GOTTA SWEEP!" - loud, everyone hears it
         const g = this.randomHallGoal(25);
         this.setGoal(g.x, g.z, true);
       }
       return;
     }
-    const speed = this.state === 'sweeping' ? 16 : 12;
+    const speed = this.state === 'sweeping' ? 21 : this.state === 'carry' ? 17 : 14;
+
     if (this.state === 'sweeping') {
+      // he comes for whoever he sees
+      if (t >= this.thinkAt) {
+        this.thinkAt = t + 0.3;
+        let best = null, bd = 1e9;
+        for (const p of room.players.values()) {
+          if (!room.canInteract(p) || p.detention) continue;
+          const d = dist(this, p);
+          if (d < 45 && d < bd && this.canSee(p, 45)) { bd = d; best = p; }
+        }
+        this.target = best ? best.id : null;
+        if (best && t >= (best.cd.sweepSee || 0)) { best.cd.sweepSee = t + 10; room.sfx('sweep', this, best.id); }
+      }
+      const tp = this.target && room.players.get(this.target);
       if (t >= this.sweepUntil) {
         this.state = 'return';
         this.setGoal(this.home.x, this.home.z, true);
+      } else if (tp) {
+        // aim a little past the player so he ploughs straight through them
+        const dx = tp.x - this.x, dz = tp.z - this.z, d = Math.hypot(dx, dz) || 1;
+        this.setGoal(tp.x + (dx / d) * 4, tp.z + (dz / d) * 4);
       } else if (this.atGoal(1.5) || !this.goal) {
         const g = this.randomHallGoal(25);
         this.setGoal(g.x, g.z, true);
       }
-    } else if (this.state === 'return') {
-      if (dist(this, this.home) < 1.2 || (this.atGoal(1.2) && dist(this, this.home) < 4)) {
+    } else if (this.state === 'return' || this.state === 'carry') {
+      if (dist(this, this.home) < 1.4 || (this.atGoal(1.2) && dist(this, this.home) < 4)) {
+        if (this.state === 'carry') this.dropInCloset();
         this.state = 'closet';
-        this.nextSweep = t + 60 + room.rng() * 40;
+        this.nextSweep = t + 55 + room.rng() * 35;
         return;
       }
       if (!this.path || !this.path.length) this.setGoal(this.home.x, this.home.z, true);
@@ -589,22 +616,52 @@ export class Sweep extends Npc {
     this.followPath(speed * dt);
     this.vel = { x: (this.x - ox) / Math.max(dt, 1e-3), z: (this.z - oz) / Math.max(dt, 1e-3) };
     if (this.checkStuck(dt, true)) {
-      if (this.state === 'return') this.setGoal(this.home.x, this.home.z, true);
+      if (this.state !== 'sweeping') this.setGoal(this.home.x, this.home.z, true);
       else this.goal = null;
     }
-    // sweep everything in front of the broom along the travel direction
     const v = Math.hypot(this.vel.x, this.vel.z);
+    const nx = v > 0.5 ? this.vel.x / v : 0, nz = v > 0.5 ? this.vel.z / v : 0;
+
+    if (this.state === 'carry') {
+      // drag the captured player along right in front of the broom
+      const p = room.players.get(this.carry);
+      if (!p || !room.canInteract(p) || p.detention || dist(this, p) > 9) { this.carry = null; this.state = 'return'; return; }
+      const tx = this.x + nx * 1.4, tz = this.z + nz * 1.4;
+      room.pushPlayer(p, (tx - p.x) * 8 + this.vel.x, (tz - p.z) * 8 + this.vel.z, 0.3);
+      return;
+    }
+
     if (v > 1) {
-      const nx = this.vel.x / v, nz = this.vel.z / v;
       for (const p of room.players.values()) {
         if (!room.canInteract(p) || p.detention) continue;
-        if (dist(this, p) < 2.3) room.pushPlayer(p, nx * speed * 1.05, nz * speed * 1.05, 0.3);
+        if (dist(this, p) >= 2.4) continue;
+        // sometimes he doesn't just sweep you - he takes you back to his closet
+        if (this.state === 'sweeping' && !this.carried && room.rng() < 0.35) {
+          this.carried = true;
+          this.carry = p.id;
+          this.state = 'carry';
+          this.setGoal(this.home.x, this.home.z, true);
+          room.toast(p, 'Gotta Sweep grabbed you!');
+          return;
+        }
+        room.pushPlayer(p, nx * speed * 1.1, nz * speed * 1.1, 0.35);
       }
       for (const n of room.npcs) {
         if (n === this || !n.pushable || n.hidden) continue;
         if (dist(this, n) < 2.3) n.push = { vx: nx * speed, vz: nz * speed, until: t + 0.3 };
       }
     }
+  }
+
+  dropInCloset() {
+    const room = this.room;
+    const p = room.players.get(this.carry);
+    this.carry = null;
+    if (!p || !room.canInteract(p)) return;
+    const r = room.map.roomById.janitor;
+    const c = cellCenter(Math.floor((r.x0 + r.x1) / 2), r.z0 + 1);
+    room.teleport(p, c.x, c.z, Math.PI);
+    room.toast(p, 'Gotta Sweep dumped you in his closet!');
   }
 }
 
@@ -755,6 +812,9 @@ export class Arts extends Npc {
     const all = [...room.players.values()].filter((p) => room.canInteract(p));
     const hunters = all.filter((p) => p.exercisesDone.size >= 7);
     const active = hunters.length > 0;
+    // the sock sometimes plays his creepy children's song for the whole school
+    if (!this.nextSong) this.nextSong = t + 45 + room.rng() * 40;
+    if (t >= this.nextSong) { this.nextSong = t + 60 + room.rng() * 60; room.sfx('childmusic', this, '*'); }
 
     if (this.state === 'hidden') {
       this.hidden = true;

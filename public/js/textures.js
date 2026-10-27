@@ -398,7 +398,7 @@ export const IMAGE_ICONS = {
   keys: 'random/KeyIcon_Large', bar: 'random/ZestyBarIcon_Large', lock: 'random/SwingingDoorLockIcon_Large',
   energy: 'random/BBTimesAsset_bigicon_BSED', food: 'random/Food', notebooks: 'random/Notebooks',
   papers: 'random/Papers', pencils: 'random/Pencils', globe: 'random/Globe', exit: 'random/ExitSignSprite',
-  bus: 'random/Bus',
+  bus: 'random/Bus', flowerpot: 'flowerpot',
 };
 
 const MORE = {

@@ -1,7 +1,7 @@
 // In-world training exercises: no worksheets. You stand at a machine, run around the room and
 // press keys. Positional steps are confirmed by the server against your real position.
 import * as THREE from 'three';
-import { CELL } from '/shared/constants.js';
+import { CELL, EYE_H } from '/shared/constants.js';
 import { audio } from './audio.js';
 import { net } from './net.js';
 import { iconTex } from './textures.js';
@@ -43,12 +43,14 @@ export class ExerciseRunner {
     if (this.spec.steps) {
       this.spec.steps.forEach((s, i) => {
         const key = s.kind === 'food' ? FOOD_ICON[s.food] : STEP_ICON[s.kind];
-        const m = billboard(key, s.kind === 'shelf' ? 2.2 : s.kind === 'counter' ? 1.6 : 1.3, s.kind === 'spill' ? 0.02 : s.kind === 'counter' ? 2.6 : 0);
+        // markers float at eye height so they are always in view (no looking up or down)
+        const size = s.kind === 'shelf' ? 1.8 : 1.3;
+        const m = billboard(key, size, EYE_H - size / 2);
         m.position.x = s.x; m.position.z = s.z;
         this.group.add(m);
         this.markers.push(m);
       });
-      this.arrow = billboard('arrow', 0.9, 3.2);
+      this.arrow = billboard('arrow', 0.7, EYE_H + 0.75);
       this.group.add(this.arrow);
     }
     $('xhud').classList.remove('hidden');
@@ -58,6 +60,7 @@ export class ExerciseRunner {
   }
 
   get frozen() { return this.type === 'pushups'; }
+  get usesSpace() { return this.type === 'fryer'; }
   elapsed() { return this.game.time - this.t0; }
 
   // returns true when the key press belongs to the exercise
@@ -182,7 +185,7 @@ export class ExerciseRunner {
         } else { this.holdStart = null; this.holdT = Math.max(0, this.holdT - dt * 2); }
       }
       if (s && this.arrow) {
-        this.arrow.position.set(s.x, 3.0 + Math.sin(g.time * 5) * 0.25, s.z);
+        this.arrow.position.set(s.x, EYE_H + 0.75 + Math.sin(g.time * 5) * 0.15, s.z);
         const m = this.markers[this.stepIdx];
         if (m) m.scale.setScalar(1 + Math.sin(g.time * 8) * 0.08);
       }

@@ -304,13 +304,13 @@ export function buildWorld(map) {
         box(x0, 0, z0, x1, p.h, z1, '#b8915a');
         break;
       case 'station': {
-        box(x0, 0, z0, x1, 1.2, z1, '#555b63');
+        box(x0, 0, z0, x1, 2.35, z1, '#555b63');
         const st = map.stations[p.stationId];
         const face = st.face;
         const n = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[face];
         const g = new THREE.BoxGeometry(face === 'n' || face === 's' ? p.w : 0.5, 1.6, face === 'n' || face === 's' ? 0.5 : p.d);
         const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d4249' }));
-        mesh.position.set(p.x - n[0] * 0.3, 2.0, p.z - n[1] * 0.3);
+        mesh.position.set(p.x - n[0] * 0.3, 3.15, p.z - n[1] * 0.3); // screen at eye height
         const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: stationTex('pushups', false, p.stationId + 1) }));
         scr.position.set(n[0] * 0.26, 0, n[1] * 0.26);
         scr.rotation.y = Math.atan2(n[0], n[1]);

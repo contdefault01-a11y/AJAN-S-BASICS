@@ -7,7 +7,8 @@ import { AUDIO } from '/shared/constants.js';
 // otherwise a synthesized placeholder plays and the gap is logged once.
 const OPTIONAL = new Set(['bullysee', 'bullytake', 'bullypass']);
 // Voice lines get loudness-normalized so every character is clearly audible over the music.
-const VOICES = new Set(['menuvoice', 'start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize']);
+const VOICES = new Set(['menuvoice', 'start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize',
+  'sweep', 'sweepout', 'whistle', 'childmusic', 'win']);
 // Relative level of each music track (music always sits under the voices).
 export const MUSIC_LEVEL = { menu: 0.55, music1: 0.32, music2: 0.5, musicwrong: 0.75, musicescape: 0.6 };
 // STOMP.mp3 starts with ~0.86 s of silence: skip it so the hit lands on the step.
@@ -62,6 +63,8 @@ export class AudioManager {
         this.buffers.set(key, buf);
         if (VOICES.has(key)) this.norm.set(key, this.loudnessGain(buf, -13, -0.5));
         if (key === 'stomp') this.norm.set(key, this.loudnessGain(buf, -10, -0.3));
+        // school-wide noises (sweepout, whistle, the sock's song) are meant to be LOUD
+        if (key === 'sweepout' || key === 'whistle' || key === 'childmusic') this.norm.set(key, this.loudnessGain(buf, -10, -0.3));
       } catch (e) {
         this.missing.add(key);
         console.warn(`[audio] ${file} is ${OPTIONAL.has(key) ? 'not supplied yet' : 'MISSING'} - using a synthesized placeholder for "${key}".`);
