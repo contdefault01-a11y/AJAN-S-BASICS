@@ -18,7 +18,7 @@ const $ = (id) => document.getElementById(id);
 const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize', 'sweep', 'sweepout', 'whistle', 'childmusic', 'catboypass', 'catboypass2', 'catboysee', 'catboygood', 'catboyajan', 'catboyprincipal', 'facu', 'prinbul', 'pr1', 'pr2', 'pr3', 'lockcaught']);
 const NPC_LOOK = {
   ajan: { img: 'AJAN', h: 5.6 }, principal: { img: 'PRINCIPAL', h: 5.0 }, playtime: { img: 'PLAYTIME', h: 4.1 },
-  bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 9.9, y: -1.5 }, arts: { img: 'ARTS', h: 4.3 },
+  bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 6.7 }, arts: { img: 'ARTS', h: 4.3 },
 };
 const FACES = ['FACE1', 'FACE2', 'FACE3'];
 const ACTIVE = new Set([PHASE.INTRO, PHASE.TRAINING, PHASE.COLLECT_CASH, PHASE.FAST_FOOD, PHASE.FINAL_ESCAPE]);
