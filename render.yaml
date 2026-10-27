@@ -1,0 +1,15 @@
+# Render Blueprint: one Node web service serves the client, the assets and the Socket.IO game server.
+services:
+  - type: web
+    name: ajans-basics
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MAX_PLAYERS
+        value: "8"

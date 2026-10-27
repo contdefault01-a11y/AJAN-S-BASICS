@@ -1,0 +1,25 @@
+{
+  "name": "ajans-basics",
+  "version": "1.0.0",
+  "description": "AJAN'S BASICS IN FAST FOOD AND TRAINING - a Classic-style first-person horror-comedy with multiplayer",
+  "type": "module",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "build": "node scripts/check.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
