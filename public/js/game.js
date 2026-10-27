@@ -314,8 +314,8 @@ export class Game {
       case 'stomp': {
         // STOMP.mp3: loud and heavy up close, quieter and muffled the further away AJAN is
         const d = Math.hypot(ev.x - this.me.x, ev.z - this.me.z);
-        audio.play('stomp', { pos: { x: ev.x, z: ev.z }, range: 230, dedupe: false, volume: ev.f ? 1.6 : 1.35, muffle: d > 45 ? Math.max(350, 2400 - d * 12) : 0 });
-        const k = Math.max(0, 1 - d / 120);
+        audio.play('stomp', { pos: { x: ev.x, z: ev.z }, range: 150, dedupe: false, volume: ev.f ? 1.6 : 1.35, muffle: d > 30 ? Math.max(350, 2400 - d * 18) : 0 });
+        const k = Math.max(0, 1 - d / 85);
         if (this.app.settings.shake) this.shake = Math.max(this.shake, k * k * (ev.f ? 1.1 : 0.85) + (k > 0 ? 0.08 : 0));
         if (d < 22) { this.app.postfx.flash = Math.max(this.app.postfx.flash, (1 - d / 22) * 0.25); this.fovKick = (1 - d / 22) * 5; }
         const a = this.npcs.get('ajan'); if (a) a.squash = 1;
