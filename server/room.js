@@ -3,12 +3,12 @@
 // Clients own only their own camera / movement, which the server sanity-checks.
 import {
   CELL, PLAYER_R, WALK_SPEED, RUN_SPEED, INVENTORY_SLOTS, EXERCISE_COUNT, CALORIE_GOAL,
-  ITEMS, RESTAURANTS, CASH_VALUES, BEST_CAL_PER_CENT, PHASE, canTransition, TICK_HZ,
+  ITEMS, RESTAURANTS, CASH_VALUES, BEST_CAL_PER_CENT, PHASE, STORY, canTransition, TICK_HZ,
 } from '../shared/constants.js';
-import { buildMap, cellCenter, worldToCell, SPAWNS, T_FLOOR } from '../shared/map.js';
-import { makeSolidTest, circleFree } from '../shared/collision.js';
+import { buildMap, cellCenter, worldToCell, SPAWNS, E_OPEN, E_DOOR } from '../shared/map.js';
+import { makeSolidTest, resolveCircle, segmentBlocked } from '../shared/collision.js';
 import { makeRng, randomSeed } from '../shared/rng.js';
-import { EXERCISE_TYPES, EXERCISE_INFO, generateExercise, validateExercise } from './exercises.js';
+import { RANDOM_TYPES, EXERCISE_INFO, generateExercise, validateExercise, validateStep } from './exercises.js';
 import { Ajan, Principal, Playtime, Bully, Sweep, Prize, Arts, fwd } from './npcs.js';
 
 let SHARED_MAP = null;
@@ -41,7 +41,10 @@ export class Room {
     this.nextObj = 1;
     this.outbox = [];
     this.nextColor = 0;
-    this.stationTypes = this.rng.shuffle(EXERCISE_TYPES.slice()); // which exercise sits in which room
+    // Exercise 1 (left of the entrance hall) is push-ups, Exercise 2 (right) is AJAN's impossible
+    // trick; the other five rooms get the remaining exercises in a random order.
+    this.stationTypes = ['pushups', 'impossible', ...this.rng.shuffle(RANDOM_TYPES.slice())];
+    this.story = STORY.WELCOME;
     this.ajan = new Ajan(this);
     this.npcs = [this.ajan, new Principal(this), new Playtime(this), new Bully(this), new Sweep(this), new Prize(this), new Arts(this)];
     this.npcById = Object.fromEntries(this.npcs.map((n) => [n.id, n]));
@@ -60,7 +63,10 @@ export class Room {
     return m;
   }
   itemName(id) { return ITEMS[id] ? ITEMS[id].name : id; }
-  doorLockedIdx(i) { const d = this.map.doorAt[i]; return d >= 0 && this.doors[d].locked; }
+  get chase() { return this.story === STORY.CHASE; }
+  // other characters only notice players once AJAN's chase has started
+  canInteract(p) { return this.chase && this.isActive(p); }
+  npcEdgeOk(e) { return e.t === E_OPEN || (e.t === E_DOOR && !this.doors[e.d].locked); }
 
   event(ev, to = null) { this.outbox.push({ ev, to }); }
   sfx(k, src, to = null, extra = {}) {
@@ -137,7 +143,7 @@ export class Room {
       det: p.detention ? Math.max(0, p.detention.until - this.t) : 0,
       jump: p.jump ? { period: p.jump.period, need: p.jump.need } : null,
       quiet: Math.max(0, p.quietUntil - this.t), energy: Math.max(0, p.energyUntil - this.t),
-      furious: this.furious, officeDoor: this.officeDoor, stations: this.stationTypes,
+      furious: this.furious, officeDoor: this.officeDoor, stations: this.stationTypes, story: this.story, coin: !!p.gotAjanCoin,
       solo: this.solo, code: this.code,
     };
   }
@@ -176,12 +182,9 @@ export class Room {
     if (p.jump && Math.hypot(x - p.jump.x, z - p.jump.z) > 1.5) ok = false;
     if (ok) {
       // the destination must be open floor and the straight segment must not pass through walls
-      const solid = makeSolidTest(this.map, this.doors, { ignoreDoors: true });
-      const steps = Math.ceil(d / 0.5);
-      for (let i = 1; i <= steps && ok; i++) {
-        const c = worldToCell(p.x + ((x - p.x) * i) / steps, p.z + ((z - p.z) * i) / steps);
-        if (solid(c.cx, c.cz)) ok = false;
-      }
+      const solid = makeSolidTest(this.map, this.doors, { ignoreDoors: true, detainedDoor: p.detention ? this.officeDoor : -1 });
+      const c = worldToCell(x, z);
+      if (!this.map.isFloor(c.cx, c.cz) || segmentBlocked(this.map, p.x, p.z, x, z, solid)) ok = false;
     }
     if (ok && p.detention) {
       const r = this.map.roomById.office;
@@ -201,13 +204,13 @@ export class Room {
     const d = this.doors[id];
     if (!d || d.locked) return false;
     const def = this.map.doors[id];
-    const c = cellCenter(def.x, def.z);
+    const c = { x: def.x, z: def.z };
     if (!d.open) {
       d.open = true;
       this.event({ e: 'sfx', k: 'door', x: c.x, z: c.z, to: '' });
       if (player) {
         this.event({ e: 'face' }, player.id);
-        if (this.t >= player.quietUntil) this.noise(c.x, c.z, 30 + 5 * this.maxProgress(), 1);
+        if (this.t >= player.quietUntil) this.noise(c.x, c.z, 45 + 6 * this.maxProgress(), 1);
       }
     }
     d.closeAt = this.t + (npc ? 2.0 : 3.5);
@@ -215,11 +218,12 @@ export class Room {
   }
 
   spawnInitialItems() {
-    const spots = this.rng.shuffle(this.map.itemSpots.slice());
-    const base = ['scissors', 'scissors', 'soda', 'soda', 'keys', 'coin', 'coin', 'bar', 'lock', 'sneakers', 'clock', 'energy'];
-    const pool = ['scissors', 'soda', 'bar', 'coin', 'lock', 'sneakers', 'clock', 'energy', 'keys'];
-    const list = base.concat([this.rng.pick(pool), this.rng.pick(pool), this.rng.pick(pool), this.rng.pick(pool)]);
-    list.forEach((item, i) => { const s = spots[i]; if (s) this.addPickup({ kind: 'item', item, x: s.x, z: s.z, y: 0 }); });
+    // mostly in rooms; at most three items lie around in the hallways
+    const rooms = this.rng.shuffle(this.map.itemSpots.filter((s) => !s.hall));
+    const halls = this.rng.shuffle(this.map.itemSpots.filter((s) => s.hall)).slice(0, 3);
+    const spots = rooms.slice(0, 9).concat(halls);
+    const list = ['scissors', 'scissors', 'soda', 'soda', 'keys', 'coin', 'bar', 'lock', 'sneakers', 'clock', 'energy', 'soda'];
+    this.rng.shuffle(list).forEach((item, i) => { const s = spots[i]; if (s) this.addPickup({ kind: 'item', item, x: s.x, z: s.z, y: 0 }); });
   }
 
   addPickup(p) {
@@ -294,7 +298,7 @@ export class Room {
     const d = this.doors[this.officeDoor];
     d.open = false;
     const od = this.map.doors[this.officeDoor];
-    const dc = cellCenter(od.x, od.z);
+    const dc = { x: od.x, z: od.z };
     principal.x = dc.x; principal.z = dc.z + 3; principal.path = null; principal.goal = null;
     this.sfx('principal2', principal, p.id);
     this.toast(p, 'Detention for you. ' + dur + ' seconds!');
@@ -344,7 +348,8 @@ export class Room {
       const [cx, cz] = this.map.hallCells[Math.floor(this.rng() * this.map.hallCells.length)];
       const c = cellCenter(cx, cz);
       if (Math.hypot(c.x - p.x, c.z - p.z) < 45) continue;
-      if (!circleFree(this.map, c.x, c.z, PLAYER_R, this.playerSolid(p))) continue;
+      const probe = { x: c.x, z: c.z };
+      if (resolveCircle(this.map, probe, PLAYER_R, this.playerSolid(p))) continue;
       best = c; break;
     }
     if (!best) return;
@@ -385,9 +390,11 @@ export class Room {
           if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
           if (p.exercisesDone.size >= EXERCISE_COUNT) this.setPhase(p, PHASE.COLLECT_CASH);
         }
+        if (Array.isArray(msg.types)) this.stationTypes = this.stationTypes.map((t, i) => msg.types[i] || t);
         if (msg.cash) p.cash += msg.cash | 0;
         if (msg.give && ITEMS[msg.give]) this.giveItem(p, msg.give);
-        if (msg.ajan) { this.ajan.mood = msg.ajan; this.ajan.state = 'hunt'; }
+        if (msg.ajan === 'angry' || msg.chase) this.startChase(p);
+        else if (msg.ajan) this.ajan.mood = msg.ajan;
         if (msg.npc) { const n = this.npcById[msg.npc[0]]; if (n) { n.x = +msg.npc[1]; n.z = +msg.npc[2]; n.path = null; n.hidden = false; if (msg.npc[3]) n.state = msg.npc[3]; } }
         if (msg.freeze != null) this.frozenNpcs = !!msg.freeze;
         p.dirty = true;
@@ -407,8 +414,7 @@ export class Room {
       case 'door': {
         const def = this.map.doors[msg.door | 0];
         if (!def) return { ok: false };
-        const c = cellCenter(def.x, def.z);
-        if (Math.hypot(c.x - p.x, c.z - p.z) > 6) return { ok: false, err: 'Too far.' };
+        if (Math.hypot(def.x - p.x, def.z - p.z) > 6) return { ok: false, err: 'Too far.' };
         if (p.detention && def.id === this.officeDoor) return { ok: false, err: 'The door is locked. Detention!' };
         if (this.doors[def.id].locked) return { ok: false, err: 'This door is locked.' };
         this.openDoor(def.id, p, null);
@@ -456,15 +462,21 @@ export class Room {
         if (Math.hypot(st.x - p.x, st.z - p.z) > 6) return { ok: false, err: 'Too far.' };
         if (p.exercisesDone.has(st.id)) return { ok: false, err: 'You already completed this exercise.' };
         if (p.jump) return { ok: false, err: 'Busy!' };
+        // AJAN's lesson plan: Exercise 1, then his coin, then Exercise 2, then the rest
+        if (st.id === 1 && !p.exercisesDone.has(0)) return { ok: false, err: 'AJAN: "Do Exercise 1 first!"' };
+        if (st.id === 1 && !p.gotAjanCoin && !this.chase) return { ok: false, err: 'AJAN: "Come get your coin first!"' };
+        if (st.id >= 2 && !this.chase) return { ok: false, err: 'AJAN: "Finish the exercises in the entrance hall first!"' };
         const type = this.stationTypes[st.id];
-        let pend = p.pendingEx.get(st.id);
-        if (!pend) {
-          const g = generateExercise(type, this.rng);
-          pend = { type, spec: g.spec, solution: g.solution, servedAt: t };
-          p.pendingEx.set(st.id, pend);
-        }
-        pend.servedAt = t;
+        const g = generateExercise(type, this.rng, { cells: this.map.exerciseCells[st.id], station: st });
+        const pend = { type, spec: g.spec, solution: g.solution, servedAt: t, stepIdx: 0 };
+        p.pendingEx.set(st.id, pend);
         return { ok: true, station: st.id, type, info: EXERCISE_INFO[type], spec: pend.spec };
+      }
+
+      case 'exStep': {
+        const pend = p.pendingEx.get(msg.station | 0);
+        if (!pend) return { ok: false, err: 'Start the exercise first.' };
+        return validateStep(pend, msg.i | 0, p, t);
       }
 
       case 'exSubmit': {
@@ -473,27 +485,36 @@ export class Room {
         if (p.exercisesDone.has(st.id)) return { ok: false, err: 'Already completed.' };
         const pend = p.pendingEx.get(st.id);
         if (!pend) return { ok: false, err: 'Open the exercise first.' };
-        if (Math.hypot(st.x - p.x, st.z - p.z) > 7) return { ok: false, err: 'Too far.' };
-        const v = validateExercise(pend.type, pend.solution, pend.spec, msg.answer, t - pend.servedAt);
+        const room = this.map.roomById[st.room];
+        const c = worldToCell(p.x, p.z);
+        if (this.map.room(c.cx, c.cz) !== room) return { ok: false, err: 'Stay in the exercise room!' };
+        const v = validateExercise(pend.type, pend.solution, pend.spec, msg.answer, t - pend.servedAt, pend);
         p.pendingEx.delete(st.id);
+        if (v.impossible) {
+          // the trick question: it still counts, but AJAN loses his temper
+          p.exercisesDone.add(st.id);
+          if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
+          p.dirty = true;
+          this.startChase(p);
+          return { ok: true, success: false, impossible: true, done: p.exercisesDone.size, reason: v.reason };
+        }
         if (!v.ok) {
           this.sfx('fail', null, p.id);
-          this.noise(st.x, st.z, 9999, 2);
-          this.ajan.angerBonus = Math.min(0.25, this.ajan.angerBonus + 0.04);
+          if (this.chase) {
+            this.noise(st.x, st.z, 9999, 2);
+            this.ajan.angerBonus = Math.min(0.25, this.ajan.angerBonus + 0.04);
+          }
           return { ok: true, success: false, reason: v.reason };
         }
         p.exercisesDone.add(st.id);
         if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
         p.dirty = true;
         this.sfx('success', null, p.id);
-        this.noise(st.x, st.z, 60, 1);
-        if (p.exercisesDone.size === 1) {
+        if (this.chase) this.noise(st.x, st.z, 60, 1);
+        if (st.id === 0 && !this.chase) {
           this.sfx('coin', this.ajan, p.id);
-          if (this.ajan.mood === 'happy') {
-            this.ajan.mood = 'coin';
-            this.ajan.coinTarget = p.id;
-            this.ajan.coinUntil = t + 13;
-          }
+          if (this.ajan.mood === 'happy') { this.ajan.mood = 'coin'; this.story = STORY.COIN; }
+          this.toast(p, 'AJAN wants to give you a coin - go to him!');
         }
         if (p.exercisesDone.size >= EXERCISE_COUNT) {
           this.setPhase(p, PHASE.COLLECT_CASH);
@@ -574,7 +595,7 @@ export class Room {
       }
       case 'keys': {
         const od = this.map.doors[this.officeDoor];
-        const c = cellCenter(od.x, od.z);
+        const c = { x: od.x, z: od.z };
         if (!p.detention) return { ok: false, err: 'You are not in detention.' };
         if (Math.hypot(c.x - p.x, c.z - p.z) > 6) return { ok: false, err: 'Get closer to the door.' };
         consume();
@@ -601,7 +622,7 @@ export class Room {
       case 'lock': {
         const def = this.map.doors[msg.door | 0];
         if (!def || msg.door == null) return { ok: false, err: 'Look at a door.' };
-        const c = cellCenter(def.x, def.z);
+        const c = { x: def.x, z: def.z };
         if (Math.hypot(c.x - p.x, c.z - p.z) > 7) return { ok: false, err: 'Get closer to the door.' };
         if (def.id === this.officeDoor && p.detention) return { ok: false, err: 'Nice try.' };
         const ds = this.doors[def.id];
@@ -624,6 +645,17 @@ export class Room {
       }
     }
     return { ok: false, err: 'Cannot use that.' };
+  }
+
+  // The impossible answer: AJAN gets mad (AJANMAD + musicwrong + FACE3 on the client),
+  // vanishes to the cafeteria and the chase is on. Everyone else becomes dangerous too.
+  startChase(p) {
+    if (this.chase) { this.noise(p.x, p.z, 9999, 2); return; }
+    this.story = STORY.CHASE;
+    this.ajan.becomeAngry();
+    this.event({ e: 'chase', by: p.id });
+    this.sfx('mad', this.ajan, '*');
+    for (const o of this.players.values()) o.dirty = true;
   }
 
   startFinal(p) {
@@ -652,8 +684,7 @@ export class Room {
       if (p.jump && t - p.jump.start > 45) this.endJumpRope(p, 'timeout');
       if (p.phase === PHASE.FINAL_ESCAPE && p.calories >= CALORIE_GOAL) {
         for (const e of this.map.exits) {
-          const c = cellCenter(e.x, e.z);
-          if (Math.hypot(c.x - p.x, c.z - p.z) < CELL * 1.25) {
+          if (Math.hypot(e.wx - p.x, e.wz - p.z) < CELL * 0.9) {
             this.setPhase(p, PHASE.VICTORY);
             this.event({ e: 'victory' }, p.id);
             for (const o of this.players.values()) if (o !== p) this.toast(o, p.name + ' escaped!');
@@ -674,10 +705,12 @@ export class Room {
       if (d.locked && t >= d.lockedUntil) { d.locked = false; for (const n of this.npcs) n.path = null; }
       if (d.open && t >= d.closeAt) {
         const def = this.map.doors[i];
-        const c = cellCenter(def.x, def.z);
+        // never slam a door shut on someone standing in the doorway
+        const along = def.axis === 'x' ? 'z' : 'x', across = def.axis;
+        const inDoor = (o, r) => Math.abs(o[along] - def[along]) < CELL * 0.5 + r && Math.abs(o[across] - def[across]) < r + 0.15;
         let occupied = false;
-        for (const o of this.players.values()) if (Math.abs(o.x - c.x) < CELL * 0.5 + PLAYER_R && Math.abs(o.z - c.z) < CELL * 0.5 + PLAYER_R) occupied = true;
-        for (const o of this.npcs) if (!o.hidden && Math.abs(o.x - c.x) < CELL * 0.5 + o.r && Math.abs(o.z - c.z) < CELL * 0.5 + o.r) occupied = true;
+        for (const o of this.players.values()) if (inDoor(o, PLAYER_R)) occupied = true;
+        for (const o of this.npcs) if (!o.hidden && inDoor(o, o.r)) occupied = true;
         if (!occupied) d.open = false;
         else d.closeAt = t + 0.5;
       }
@@ -687,9 +720,9 @@ export class Room {
     const solid = makeSolidTest(this.map, this.doors);
     this.objs = this.objs.filter((o) => {
       if (o.k === 'soda') {
-        o.x += o.vx * dt; o.z += o.vz * dt;
-        const c = worldToCell(o.x, o.z);
-        if (solid(c.cx, c.cz) || t > o.until) return false;
+        const nx = o.x + o.vx * dt, nz = o.z + o.vz * dt;
+        if (segmentBlocked(this.map, o.x, o.z, nx, nz, solid) || t > o.until) return false;
+        o.x = nx; o.z = nz;
         for (const n of this.npcs) {
           if (!n.sodaPushable || n.hidden || o.hit.has(n.id)) continue;
           if (Math.hypot(n.x - o.x, n.z - o.z) < 1.9) {

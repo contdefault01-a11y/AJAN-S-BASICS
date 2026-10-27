@@ -11,8 +11,8 @@ import { makeSolidTest, moveCircle, resolveCircle } from '/shared/collision.js';
 import { lineOfSight } from '/shared/nav.js';
 import { audio } from './audio.js';
 import { net } from './net.js';
-import { spriteTex, playerSpriteTex, labelTex, shadowTex, iconTex, iconDataURL, sprayTex, drawTimer } from './textures.js';
-import { renderExercise } from './exerciseUI.js';
+import { spriteTex, playerSpriteTex, labelTex, iconTex, iconDataURL, sprayTex, drawTimer } from './textures.js';
+import { ExerciseRunner } from './exercise.js';
 
 const $ = (id) => document.getElementById(id);
 const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize']);
@@ -85,6 +85,9 @@ export class Game {
     for (const p of init.pickups) this.addPickup(p);
     for (let i = 0; i < this.map.stations.length; i++) this.world.setStation(i, this.stationTypes[i], this.self.ex.includes(i));
     this.setSelf(init.self, true);
+    this.chaseShown = init.self.story === 'chase';
+    this.baseMusic = init.self.furious ? 'musicescape' : init.self.story === 'chase' ? null : 'music1';
+    this.updateMusic();
     $('mp-status').classList.toggle('hidden', this.solo);
   }
 
@@ -94,6 +97,9 @@ export class Game {
     this.onKeyDown = (e) => {
       if (this.ui || this.ended) return;
       this.keys.add(e.code);
+      if (e.repeat) return;
+      // a running exercise gets first pick of the keys (E, G, Space, letters...)
+      if (this.ex && !this.paused && this.ex.onKey(e.code)) { e.preventDefault(); return; }
       if (e.code.startsWith('Digit')) { const n = +e.code.slice(5) - 1; if (n >= 0 && n < 3) this.select(n); }
       if (e.code === 'Space') { e.preventDefault(); if (this.jump) this.jumpPress(); }
       if (e.code === 'KeyE' || e.code === 'KeyF') this.interact();
@@ -172,6 +178,8 @@ export class Game {
     if (s.phase !== this.lastPhase) this.onPhase(s.phase, this.lastPhase);
     this.lastPhase = s.phase;
     this.app.postfx.target = s.furious ? 1 : 0;
+    if (!initial && s.story === 'chase' && !this.chaseShown) this.onChase();
+    if (!initial && s.furious && this.baseMusic !== 'musicescape') { this.baseMusic = 'musicescape'; this.updateMusic(); }
     this.world.setExitsOpen(s.phase === PHASE.FINAL_ESCAPE);
     this.updateHud();
   }
@@ -183,6 +191,7 @@ export class Game {
       $('end').classList.add('hidden');
       this.ended = false;
       this.lock();
+      this.updateMusic();
     }
   }
 
@@ -199,7 +208,7 @@ export class Game {
         this.doorState[i].open = s.d[i] === 'o';
         this.doorState[i].locked = s.d[i] === 'l';
         if (prevOpen && !this.doorState[i].open) {
-          const d = this.map.doors[i]; const c = cellCenter(d.x, d.z);
+          const d = this.map.doors[i]; const c = { x: d.x, z: d.z };
           if (Math.hypot(c.x - this.me.x, c.z - this.me.z) < 30) audio.play('doorclose', { pos: c, range: 30, dedupe: false, volume: 0.6 });
         }
       }
@@ -219,10 +228,8 @@ export class Game {
         const look = NPC_LOOK[n.k];
         const st = spriteTex(look.img);
         const mesh = makeBillboard(st.tex, st.aspect, look.h);
-        const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false }));
-        shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.02;
-        this.dyn.add(mesh, shadow);
-        e = { id: n.id, k: n.k, mesh, shadow, look, x: n.x, z: n.z, squash: 0, img: look.img };
+        this.dyn.add(mesh);
+        e = { id: n.id, k: n.k, mesh, look, x: n.x, z: n.z, squash: 0, img: look.img };
         if (n.k === 'bully') e.box = null;
         this.npcs.set(n.id, e);
       }
@@ -248,7 +255,7 @@ export class Game {
       seen.add(p.id);
       let r = this.remotes.get(p.id);
       if (!r) {
-        const st = playerSpriteTex(p.c);
+        const st = playerSpriteTex(p.c, [...p.id].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) >>> 0);
         const mesh = makeBillboard(st.tex, st.aspect, 4.2);
         const label = makeBillboard(labelTex(p.n, p.c), 128 / 24, 0.6, 4.4);
         label.material.alphaTest = 0;
@@ -302,14 +309,18 @@ export class Game {
     switch (ev.e) {
       case 'sfx': this.playSfx(ev); break;
       case 'stomp': {
+        // STOMP.mp3: loud and heavy up close, quieter and muffled the further away AJAN is
         const d = Math.hypot(ev.x - this.me.x, ev.z - this.me.z);
-        audio.play('stomp', { pos: { x: ev.x, z: ev.z }, range: 95, dedupe: false, volume: ev.f ? 1.2 : 1 });
-        if (this.app.settings.shake) this.shake = Math.max(this.shake, Math.max(0, 1 - d / 55) * (ev.f ? 0.5 : 0.32));
+        audio.play('stomp', { pos: { x: ev.x, z: ev.z }, range: 150, dedupe: false, volume: ev.f ? 1.6 : 1.35, muffle: d > 30 ? Math.max(350, 2400 - d * 18) : 0 });
+        const k = Math.max(0, 1 - d / 85);
+        if (this.app.settings.shake) this.shake = Math.max(this.shake, k * k * (ev.f ? 1.1 : 0.85) + (k > 0 ? 0.08 : 0));
+        if (d < 22) { this.app.postfx.flash = Math.max(this.app.postfx.flash, (1 - d / 22) * 0.25); this.fovKick = (1 - d / 22) * 5; }
         const a = this.npcs.get('ajan'); if (a) a.squash = 1;
         break;
       }
-      case 'ajan_angry': this.app.postfx.flash = 0.6; this.shake = 0.6; break;
-      case 'mad': this.app.postfx.flash = 1; this.shake = 1; this.toast('AJAN IS FURIOUS!', 'money'); break;
+      case 'ajan_angry': this.app.postfx.flash = 0.6; this.shake = 0.8; break;
+      case 'chase': this.onChase(); break;
+      case 'mad': this.app.postfx.flash = 1; this.shake = 1; this.toast('AJAN IS FURIOUS!', 'money'); this.baseMusic = 'musicescape'; this.updateMusic(); break;
       case 'face': if (this.time - this.lastFaceT > 1) this.showFace(); break;
       case 'toast': this.toast(ev.text); break;
       case 'cash': this.toast('+' + fmtCash(ev.v), 'money'); audio.play('cash', { dedupe: false }); break;
@@ -443,25 +454,26 @@ export class Game {
     for (const d of this.map.doors) {
       const st = this.doorState[d.id];
       if (st.open || (this.predictOpen.get(d.id) || 0) > this.time) continue;
-      const c = cellCenter(d.x, d.z);
-      consider(c.x, c.z, INTERACT_DIST, 'door', d, 0.7);
+      consider(d.x, d.z, INTERACT_DIST, 'door', d, 0.7);
     }
     for (const pk of this.pickups.values()) {
       if (!pk.mesh.visible) continue;
       consider(pk.data.x, pk.data.z, 3.2, 'pickup', pk.data, 0.75);
     }
     for (const st of this.map.stations) {
-      if (this.self.ex.includes(st.id)) continue;
+      if (this.self.ex.includes(st.id) || this.ex) continue;
       consider(st.x, st.z, 4.6, 'station', st, 0.75);
     }
     for (const c of this.map.counters) consider(c.x, c.z - 1.8, 6.5, 'counter', c, 0.55);
     for (const v of this.map.vending) consider(v.wx, v.wz, 4.0, 'vending', v, 0.7);
     cands.sort((a, b) => a.score - b.score);
     for (const c of cands) {
-      const tx = c.kind === 'door' ? cellCenter(c.data.x, c.data.z).x : c.data.x ?? c.data.wx;
-      const tz = c.kind === 'door' ? cellCenter(c.data.x, c.data.z).z : c.data.z ?? c.data.wz;
-      // the target cell itself may be "solid" (door) - test sight to a point just in front of it
-      const ex = tx - (tx - this.me.x) * 0.25, ez = tz - (tz - this.me.z) * 0.25;
+      const tx = c.data.wx ?? c.data.x;
+      const tz = c.data.wz ?? c.data.z;
+      // doors sit inside the wall - test sight to a point just in front of the target
+      const dd = Math.hypot(tx - this.me.x, tz - this.me.z) || 1;
+      const back = Math.min(0.6, dd * 0.5) / dd;
+      const ex = tx - (tx - this.me.x) * back, ez = tz - (tz - this.me.z) * back;
       if (c.kind === 'vending' || lineOfSight(this.map, this.me.x, this.me.z, ex, ez, this.doorState)) return c;
     }
     return null;
@@ -503,7 +515,7 @@ export class Game {
       const f = fwd(this.me.yaw);
       let best = null, bd = 1e9;
       for (const d of this.map.doors) {
-        const c = cellCenter(d.x, d.z);
+        const c = { x: d.x, z: d.z };
         const dx = c.x - this.me.x, dz = c.z - this.me.z, dist = Math.hypot(dx, dz);
         if (dist > 7 || (dist > 1 && (dx * f.x + dz * f.z) / dist < 0.6)) continue;
         if (dist < bd) { bd = dist; best = d; }
@@ -514,52 +526,62 @@ export class Game {
     if (!res.ok && res.err) this.toast(res.err);
   }
 
-  // ------------------------------------------------------------------ exercises
+  // ------------------------------------------------------------------ exercises (in-world)
   async openExercise(id) {
+    if (this.ex) return;
     const res = await net.act('exOpen', { station: id });
     if (!res.ok) { if (res.err) this.toast(res.err); return; }
-    this.ui = 'exercise';
-    this.keys.clear();
-    document.exitPointerLock();
-    const panel = $('exercise-panel');
-    $('exercise').classList.remove('hidden');
-    const close = () => this.closeUi();
-    res.onClose = close;
-    this.uiCtl && this.uiCtl.destroy();
-    this.uiCtl = renderExercise(panel, res, async (answer) => {
-      const r = await net.act('exSubmit', { station: id, answer });
-      this.uiCtl && this.uiCtl.destroy();
-      panel.innerHTML = '';
-      const box = document.createElement('div');
-      if (r.ok && r.success) {
-        box.className = 'result good';
-        box.innerHTML = `<h2>GREAT JOB!</h2><p>${r.done} / ${EXERCISE_COUNT} exercises complete.</p>`;
-        this.world.setStation(id, this.stationTypes[id], true);
-      } else {
-        box.className = 'result';
-        box.innerHTML = `<h2>WRONG!</h2><p>${escapeHtml((r && (r.reason || r.err)) || 'Try again.')}</p><p>AJAN heard that...</p>`;
-      }
-      const row = document.createElement('div');
-      const cont = document.createElement('button');
-      cont.className = 'mbtn'; cont.textContent = 'CONTINUE';
-      cont.onclick = close;
-      row.append(cont);
-      if (!(r.ok && r.success)) {
-        const again = document.createElement('button');
-        again.className = 'mbtn back'; again.textContent = 'TRY AGAIN';
-        again.onclick = () => { this.closeUi(false); this.openExercise(id); };
-        row.append(again);
-      }
-      box.append(row);
-      panel.append(box);
-    });
+    this.ex = new ExerciseRunner(this, res);
+    this.updateMusic();
+  }
+
+  exerciseFinished(runner, r) {
+    if (this.ex !== runner) return;
+    runner.dispose();
+    this.ex = null;
+    const id = runner.data.station;
+    if (r && r.impossible) {
+      this.world.setStation(id, this.stationTypes[id], true);
+      this.toast('WRONG! ...nobody can press that key.');
+    } else if (r && r.abandoned) {
+      this.toast('You left the exercise. Go back to the machine to try again.');
+    } else if (r && r.ok && r.success) {
+      this.world.setStation(id, this.stationTypes[id], true);
+      this.toast('GREAT JOB! ' + r.done + ' / ' + EXERCISE_COUNT + ' exercises', 'money');
+    } else {
+      this.toast(((r && (r.reason || r.err)) || 'Try again.') + ' Press E at the machine to retry.');
+    }
+    this.updateMusic();
+  }
+
+  // ------------------------------------------------------------------ music
+  // music1 plays while AJAN welcomes you; music2 replaces it during an exercise; the chase
+  // itself is silent (just the stomps); musicescape loops once everything turns red.
+  updateMusic() {
+    const want = this.ended ? null : this.ex ? 'music2' : this.baseMusic;
+    if (want) audio.playMusic(want); else audio.stopMusic();
+  }
+
+  onChase() {
+    if (this.chaseShown) return;
+    this.chaseShown = true;
+    this.baseMusic = this.self && this.self.furious ? 'musicescape' : null;
+    this.updateMusic();
+    audio.play('musicwrong', { bus: 'music', dedupe: 'musicwrong', volume: 0.75 });
+    this.app.postfx.flash = 0.8;
+    this.shake = 1.0;
+    // AJAN's shocked face stays in the corner for a few seconds
+    const f = $('face');
+    f.src = '/assets/FACE3.png';
+    f.classList.add('show');
+    clearTimeout(this.faceTimer);
+    this.faceTimer = setTimeout(() => f.classList.remove('show'), 3500);
+    this.lastFaceT = this.time + 3;
+    this.toast('AJAN IS MAD! RUN!');
   }
 
   closeUi(relock = true) {
-    this.uiCtl && this.uiCtl.destroy();
-    this.uiCtl = null;
     this.ui = null;
-    $('exercise').classList.add('hidden');
     $('shop').classList.add('hidden');
     if (relock) this.lock();
   }
@@ -710,6 +732,8 @@ export class Game {
   // ------------------------------------------------------------------ end states
   caught() {
     this.ended = true;
+    if (this.ex) { this.ex.dispose(); this.ex = null; }
+    this.updateMusic();
     this.endJump();
     this.closeUi(false);
     document.exitPointerLock();
@@ -726,6 +750,8 @@ export class Game {
 
   victory() {
     this.ended = true;
+    if (this.ex) { this.ex.dispose(); this.ex = null; }
+    this.updateMusic();
     this.closeUi(false);
     document.exitPointerLock();
     audio.play('win', { dedupe: false });
@@ -749,7 +775,8 @@ export class Game {
     this.time += dt;
     const me = this.me;
     const active = ACTIVE.has(this.self.phase) && !this.ended;
-    const frozen = !active || !!this.ui || !!this.jump || (this.paused && this.solo);
+    const frozen = !active || !!this.ui || !!this.jump || (this.paused && this.solo) || !!(this.ex && this.ex.frozen);
+    if (this.ex) this.ex.tick(dt, this.keys);
 
     // ---- movement
     let ix = 0, iz = 0;
@@ -804,7 +831,11 @@ export class Game {
     // ---- camera
     this.shake = Math.max(0, this.shake - dt * 2.2);
     const sh = this.shake * this.shake;
-    const hop = this.jump ? Math.sin(this.jump.hop * Math.PI) * 1.2 : 0;
+    const hop = (this.jump ? Math.sin(this.jump.hop * Math.PI) * 1.2 : 0) - (this.dip || 0) * 1.4;
+    this.dip = Math.max(0, (this.dip || 0) - dt * 6);
+    this.fovKick = Math.max(0, (this.fovKick || 0) - dt * 18);
+    const fov = this.app.settings.fov + this.fovKick;
+    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     this.camera.position.set(me.x + (Math.random() - 0.5) * sh * 0.5, EYE_H + hop + (Math.random() - 0.5) * sh * 0.6, me.z + (Math.random() - 0.5) * sh * 0.5);
     this.camera.rotation.set(me.pitch + (Math.random() - 0.5) * sh * 0.04, me.yaw, (Math.random() - 0.5) * sh * 0.05, 'YXZ');
     audio.setListener(me.x, me.z, me.yaw);
@@ -814,9 +845,8 @@ export class Game {
     const cx = this.camera.position.x, cz = this.camera.position.z;
     const face = (m) => { m.rotation.y = Math.atan2(cx - m.position.x, cz - m.position.z); };
     for (const e of this.npcs.values()) {
-      e.mesh.visible = !e.hidden; e.shadow.visible = !e.hidden;
+      e.mesh.visible = !e.hidden;
       e.mesh.position.set(e.x, 0, e.z);
-      e.shadow.position.set(e.x, 0.02, e.z);
       e.squash = Math.max(0, e.squash - dt * 5);
       const bob = e.k === 'ajan' ? 1 - e.squash * 0.12 : 1 + Math.sin(this.time * 9 + e.x) * 0.015 * (e.state === 'idle' || e.state === 'closet' ? 0 : 1);
       e.mesh.scale.set(e.k === 'ajan' ? 1 + e.squash * 0.08 : 1, bob, 1);
@@ -906,6 +936,8 @@ export class Game {
   }
 
   dispose() {
+    if (this.ex) { this.ex.dispose(); this.ex = null; }
+    audio.stopMusic();
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('mousemove', this.onMouseMove);

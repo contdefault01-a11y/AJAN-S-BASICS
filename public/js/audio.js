@@ -6,6 +6,12 @@ import { AUDIO } from '/shared/constants.js';
 // Voice lines that are not supplied yet. They are loaded if the files appear in /assets,
 // otherwise a synthesized placeholder plays and the gap is logged once.
 const OPTIONAL = new Set(['bullysee', 'bullytake', 'bullypass']);
+// Voice lines get loudness-normalized so every character is clearly audible over the music.
+const VOICES = new Set(['menuvoice', 'start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize']);
+// Relative level of each music track (music always sits under the voices).
+export const MUSIC_LEVEL = { menu: 0.55, music1: 0.32, music2: 0.5, musicwrong: 0.75, musicescape: 0.6 };
+// STOMP.mp3 starts with ~0.86 s of silence: skip it so the hit lands on the step.
+const START_OFFSET = { stomp: 0.84 };
 
 export class AudioManager {
   constructor() {
@@ -17,6 +23,7 @@ export class AudioManager {
     this.settings = { master: 0.8, music: 0.6, sfx: 0.9 };
     this.music = null;
     this.loops = new Map();
+    this.norm = new Map();
   }
 
   // Must be called from a user gesture (browser autoplay policy).
@@ -51,13 +58,28 @@ export class AudioManager {
         const res = await fetch('/assets/' + file);
         if (!res.ok) throw new Error(res.status);
         const arr = await res.arrayBuffer();
-        this.buffers.set(key, await this.ctx.decodeAudioData(arr));
+        const buf = await this.ctx.decodeAudioData(arr);
+        this.buffers.set(key, buf);
+        if (VOICES.has(key)) this.norm.set(key, this.loudnessGain(buf, -13, -0.5));
+        if (key === 'stomp') this.norm.set(key, this.loudnessGain(buf, -10, -0.3));
       } catch (e) {
         this.missing.add(key);
         console.warn(`[audio] ${file} is ${OPTIONAL.has(key) ? 'not supplied yet' : 'MISSING'} - using a synthesized placeholder for "${key}".`);
       }
       onProgress && onProgress(++done / entries.length);
     }));
+  }
+
+  // gain that brings a clip's RMS to targetDb without pushing its peak above peakDb
+  loudnessGain(buf, targetDb, peakDb) {
+    let sum = 0, n = 0, peak = 0;
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < d.length; i += 4) { const v = Math.abs(d[i]); if (v > 0.003) { sum += v * v; n++; } if (v > peak) peak = v; }
+    }
+    if (!n || !peak) return 1;
+    const rmsDb = 10 * Math.log10(sum / n), peakDbNow = 20 * Math.log10(peak);
+    return Math.max(0.5, Math.min(10 ** ((targetDb - rmsDb) / 20), 10 ** ((peakDb - peakDbNow) / 20), 12));
   }
 
   makeNoise(seconds) {
@@ -90,17 +112,27 @@ export class AudioManager {
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.loop = !!opts.loop;
-    return this.route(src, key, dedupe, opts, buf.duration);
+    if (this.norm.has(key)) opts = { ...opts, volume: (opts.volume ?? 1) * this.norm.get(key) };
+    if (VOICES.has(key) && !opts.bus) opts = { ...opts, bus: 'voice' };
+    return this.route(src, key, dedupe, opts, buf.duration - (START_OFFSET[key] || 0));
   }
 
   route(src, key, dedupe, opts, duration) {
     const gain = this.ctx.createGain();
     const pan = this.ctx.createStereoPanner();
-    src.connect(gain); gain.connect(pan);
+    let head = gain;
+    if (opts.muffle) {
+      // distant sounds get darker (heard through walls)
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = opts.muffle;
+      src.connect(lp); lp.connect(gain);
+    } else src.connect(head);
+    gain.connect(pan);
     pan.connect(opts.bus === 'music' ? this.musicBus : opts.bus === 'voice' ? this.voiceBus : this.sfxBus);
     const h = { src, gain, pan, opts, key };
     this.updateHandle(h);
-    src.start();
+    src.start(0, START_OFFSET[key] || 0);
     if (dedupe) {
       this.playing.set(dedupe, h);
       src.onended = () => { if (this.playing.get(dedupe) === h) this.playing.delete(dedupe); };
@@ -138,11 +170,13 @@ export class AudioManager {
 
   isPlaying(dedupe) { return this.playing.has(dedupe); }
 
+  // One looping music track at a time; starting one stops the previous one.
   playMusic(key) {
     if (!this.ctx) return;
     if (this.music && this.music.key === key) return;
     this.stopMusic();
-    const h = this.play(key, { loop: true, bus: 'music', dedupe: 'music:' + key });
+    if (!key || !this.buffers.has(key)) return;
+    const h = this.play(key, { loop: true, bus: 'music', dedupe: 'music:' + key, volume: MUSIC_LEVEL[key] ?? 0.6 });
     if (h) this.music = { key, h };
   }
   stopMusic() {

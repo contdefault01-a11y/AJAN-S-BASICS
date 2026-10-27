@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Room } from '../server/room.js';
 import { solveExercise } from '../server/exercises.js';
 import { cellCenter, worldToCell, SPAWNS } from '../shared/map.js';
-import { CALORIE_GOAL, PHASE, RESTAURANTS } from '../shared/constants.js';
+import { CALORIE_GOAL, PHASE, RESTAURANTS, STORY } from '../shared/constants.js';
 
 const mk = (seed = 7) => {
   const room = new Room('T' + seed, { solo: false, seed });
@@ -14,40 +14,81 @@ const mk = (seed = 7) => {
 const place = (room, p, x, z) => { p.x = x; p.z = z; };
 const run = (room, seconds) => { for (let i = 0; i < seconds * 20; i++) room.tick(0.05); };
 
-function completeExercise(room, p, id) {
+// stand in front of a station, run its exercise the way a client would and submit
+function doExercise(room, p, id, answerOverride) {
   const st = room.map.stations[id];
-  place(room, p, st.x, st.z + (st.face === 's' ? 2 : st.face === 'n' ? -2 : 0) + 0.01);
-  if (st.face === 'e') p.x = st.x + 2; if (st.face === 'w') p.x = st.x - 2;
+  const d = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[st.face];
+  place(room, p, st.x + d[0] * 2.5, st.z + d[1] * 2.5);
   const open = room.handleAction(p, { type: 'exOpen', station: id });
-  assert.ok(open.ok, JSON.stringify(open));
+  if (!open.ok) return open;
   const pend = p.pendingEx.get(id);
-  room.t += 10; // humans need time
-  return room.handleAction(p, { type: 'exSubmit', station: id, answer: solveExercise(pend.type, pend.spec, pend.solution) });
+  const sol = solveExercise(pend.type, pend.spec, pend.solution);
+  if (sol.steps) sol.steps.forEach((s, i) => { place(room, p, s.x, s.z); room.t += 1.5; assert.ok(room.handleAction(p, { type: 'exStep', station: id, i }).ok); });
+  place(room, p, st.x + d[0] * 2.5, st.z + d[1] * 2.5);
+  room.t += 5;
+  return room.handleAction(p, { type: 'exSubmit', station: id, answer: answerOverride || sol.answer });
 }
+const giveCoin = (room, p) => { room.frozenNpcs = false; place(room, p, room.ajan.x, room.ajan.z + 2); room.tick(0.05); room.frozenNpcs = true; };
 
-test('exercises progress, cannot repeat, and the 7th unlocks cash collection', () => {
+test('story: exercise 1 -> AJAN gives a coin -> impossible exercise 2 -> chase, then the rest', () => {
   const { room, p } = mk();
   assert.equal(p.phase, PHASE.INTRO);
-  const r = completeExercise(room, p, 0);
-  assert.equal(r.success, true);
-  assert.equal(room.ajan.mood, 'coin', 'first exercise triggers the coin dialogue');
-  const again = room.handleAction(p, { type: 'exOpen', station: 0 });
-  assert.equal(again.ok, false);
-  for (let i = 1; i < 7; i++) assert.equal(completeExercise(room, p, i).success, true);
+  assert.equal(room.story, STORY.WELCOME);
+  assert.equal(doExercise(room, p, 1).ok, false, 'exercise 2 is locked before exercise 1');
+  assert.equal(doExercise(room, p, 3).ok, false, 'other rooms are locked before the chase');
+  assert.equal(doExercise(room, p, 0).success, true);
+  assert.equal(room.story, STORY.COIN);
+  assert.equal(room.ajan.mood, 'coin');
+  assert.ok(room.outbox.some((o) => o.ev.k === 'coin'), 'AJANCOIN plays');
+  assert.equal(doExercise(room, p, 1).ok, false, 'must fetch the coin first');
+  giveCoin(room, p);
+  assert.ok(p.gotAjanCoin);
+  assert.ok(p.inventory.includes('coin'));
+  const r = doExercise(room, p, 1);
+  assert.equal(r.impossible, true);
+  assert.equal(p.exercisesDone.size, 2, 'the trick exercise still counts');
+  assert.equal(room.story, STORY.CHASE);
+  assert.equal(room.ajan.mood, 'angry');
+  const cafe = room.map.roomById.cafeteria;
+  const c = worldToCell(room.ajan.x, room.ajan.z);
+  assert.equal(room.map.room(c.cx, c.cz), cafe, 'AJAN teleports to the cafeteria');
+  assert.ok(room.outbox.some((o) => o.ev.k === 'mad'), 'AJANMAD plays');
+  assert.ok(room.outbox.some((o) => o.ev.e === 'chase'));
+  for (let i = 2; i < 7; i++) assert.equal(doExercise(room, p, i).success, true, 'exercise ' + (i + 1));
   assert.equal(p.exercisesDone.size, 7);
   assert.equal(p.phase, PHASE.COLLECT_CASH);
+  assert.equal(room.handleAction(p, { type: 'exOpen', station: 4 }).ok, false, 'cannot repeat');
 });
 
-test('failed exercise alerts AJAN and can be retried with a new puzzle', () => {
+test('a failed exercise during the chase alerts AJAN and can be retried', () => {
   const { room, p } = mk();
+  room.startChase(p);
   const st = room.map.stations[2];
-  place(room, p, st.x, st.z - 2);
-  room.handleAction(p, { type: 'exOpen', station: 2 });
-  room.t += 5;
-  const r = room.handleAction(p, { type: 'exSubmit', station: 2, answer: { nonsense: true } });
-  assert.equal(r.success, false);
-  assert.ok(room.ajan.angerBonus > 0);
-  assert.equal(room.handleAction(p, { type: 'exOpen', station: 2 }).ok, true);
+  const d = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[st.face];
+  place(room, p, st.x + d[0] * 2.5, st.z + d[1] * 2.5);
+  assert.ok(room.handleAction(p, { type: 'exOpen', station: 2 }).ok);
+  room.ajan.heard = null;
+  room.t += 3;
+  const r = room.handleAction(p, { type: 'exSubmit', station: 2, answer: { done: true, hits: [], count: 0 } });
+  assert.equal(r.success, false, 'skipping all the steps fails');
+  assert.ok(room.ajan.heard, 'AJAN heard it');
+  assert.ok(doExercise(room, p, 2).success);
+});
+
+test('other characters ignore players until the chase starts', () => {
+  const { room, p } = mk();
+  p.phase = PHASE.TRAINING;
+  assert.equal(room.canInteract(p), false);
+  const b = room.npcById.bully;
+  b.placeAt({ x: 70, z: 19 });
+  p.inventory = ['soda', null, null];
+  place(room, p, b.x + 1.5, b.z);
+  b.update(0.05);
+  assert.equal(p.inventory[0], 'soda', 'the bully does nothing before the chase');
+  room.startChase(p);
+  assert.equal(room.canInteract(p), true);
+  b.update(0.05);
+  assert.equal(p.inventory[0], null);
 });
 
 test('cash: $1-$4 values, gated by phase, duplicate claims rejected', () => {
@@ -123,7 +164,7 @@ test('a full order of about $20 reaches 7,000 calories', () => {
 test('victory only at an exit and only after 7,000 calories', () => {
   const { room, p } = mk();
   const e = room.map.exits[0];
-  const c = cellCenter(e.x - e.nx, e.z - e.nz);
+  const c = { x: e.wx - e.nx * 1.0, z: e.wz - e.nz * 1.0 };
   place(room, p, c.x, c.z);
   p.phase = PHASE.FAST_FOOD;
   run(room, 0.5);
@@ -162,7 +203,7 @@ test('detention: principal2, office teleport, locked door, countdown, keys', () 
   const office = room.map.roomById.office;
   const c = worldToCell(p.x, p.z);
   assert.equal(room.map.room(c.cx, c.cz), office);
-  assert.equal(room.playerSolid(p)(room.map.doors[room.officeDoor].x, room.map.doors[room.officeDoor].z), true, 'door locked for the detainee');
+  assert.equal(room.playerSolid(p)(room.map.doors[room.officeDoor].edge), true, 'door locked for the detainee');
   assert.equal(room.handleAction(p, { type: 'door', door: room.officeDoor }).ok, false);
   run(room, 10);
   assert.ok(p.detention, 'still detained after 10s');
@@ -173,8 +214,7 @@ test('detention: principal2, office teleport, locked door, countdown, keys', () 
   assert.equal(p.detention.dur, 25);
   p.inventory[0] = 'keys';
   const od = room.map.doors[room.officeDoor];
-  const dc = cellCenter(od.x, od.z);
-  place(room, p, dc.x, dc.z - 3);
+  place(room, p, od.x, od.z - 1.5); // inside the office, next to its door
   assert.equal(room.handleAction(p, { type: 'use', slot: 0 }).ok, true);
   assert.equal(p.detention, null);
   assert.equal(p.inventory[0], null);
@@ -182,6 +222,7 @@ test('detention: principal2, office teleport, locked door, countdown, keys', () 
 
 test('principal catches a running player he can see', () => {
   const { room, p } = mk();
+  room.startChase(p);
   room.frozenNpcs = false;
   p.phase = PHASE.TRAINING;
   const pr = room.npcById.principal;
@@ -196,6 +237,7 @@ test('principal catches a running player he can see', () => {
 
 test('playtime jump rope: start, early completion rejected, scissors cut it', () => {
   const { room, p } = mk();
+  room.startChase(p);
   p.phase = PHASE.TRAINING;
   const pt = room.npcById.playtime;
   room.startJumpRope(p, pt); pt.state = 'jumping'; pt.target = p.id;
@@ -213,6 +255,7 @@ test('playtime jump rope: start, early completion rejected, scissors cut it', ()
 
 test('bully takes exactly one item, or lets an empty-handed player go eventually', () => {
   const { room, p } = mk();
+  room.startChase(p);
   p.phase = PHASE.TRAINING;
   const b = room.npcById.bully;
   b.placeAt({ x: 70, z: 19 });
@@ -236,7 +279,7 @@ test('NPCs never leave the walkable school (5 simulated minutes)', () => {
   const { room, p } = mk(11);
   room.frozenNpcs = false;
   p.phase = PHASE.TRAINING;
-  room.ajan.mood = 'angry';
+  room.startChase(p);
   room.npcById.sweep.nextSweep = 1;
   for (let i = 0; i < 20 * 300; i++) {
     room.tick(0.05);
@@ -244,7 +287,7 @@ test('NPCs never leave the walkable school (5 simulated minutes)', () => {
     for (const n of room.npcs) {
       if (n.hidden) continue;
       const c = worldToCell(n.x, n.z);
-      assert.equal(room.npcSolid(c.cx, c.cz), false, `${n.kind} in a wall at ${n.x.toFixed(1)},${n.z.toFixed(1)} (${n.state})`);
+      assert.equal(room.map.isFloor(c.cx, c.cz), true, `${n.kind} outside the school at ${n.x.toFixed(1)},${n.z.toFixed(1)} (${n.state})`);
     }
     if (p.phase === PHASE.CAUGHT) { room.resetPlayer(p); p.phase = PHASE.TRAINING; }
   }
@@ -252,14 +295,15 @@ test('NPCs never leave the walkable school (5 simulated minutes)', () => {
 
 test('AJAN hunts and catches a stationary player once angry', () => {
   const { room, p } = mk(5);
+  room.startChase(p);
   room.frozenNpcs = false;
   p.phase = PHASE.TRAINING;
   p.exercisesDone = new Set([0, 1, 2, 3]);
-  room.ajan.becomeAngry();
-  const sp = cellCenter(...SPAWNS.player[0]);
-  place(room, p, sp.x, sp.z + 20);
+  const sp = cellCenter(20, 50); // out in the main hall
+  place(room, p, sp.x, sp.z);
   let stomps = 0;
   for (let i = 0; i < 20 * 120 && p.phase !== PHASE.CAUGHT; i++) {
+    if (i % 200 === 0) room.noise(p.x, p.z, 60 + 6 * 4, 1); // a door opened nearby every 10 s
     room.tick(0.05);
     stomps += room.outbox.filter((o) => o.ev.e === 'stomp').length;
     room.outbox = [];
@@ -279,9 +323,10 @@ test('happy AJAN never catches anyone', () => {
 
 test('soda pushes AJAN away, scissors disable 1st Prize', () => {
   const { room, p } = mk();
+  room.startChase(p);
   p.phase = PHASE.TRAINING;
-  const a = cellCenter(49, 30);
-  room.ajan.x = a.x; room.ajan.z = a.z - 5;
+  const a = cellCenter(48, 30);
+  room.ajan.x = a.x; room.ajan.z = a.z - 5; room.ajan.push = null;
   place(room, p, a.x, a.z);
   p.inventory[0] = 'soda';
   room.handleAction(p, { type: 'use', slot: 0, yaw: 0 }); // facing -z (north) toward AJAN
@@ -300,11 +345,12 @@ test('soda pushes AJAN away, scissors disable 1st Prize', () => {
 
 test('gotta sweep pushes players without putting them in walls', () => {
   const { room, p } = mk();
+  room.startChase(p);
   p.phase = PHASE.TRAINING;
   const sw = room.npcById.sweep;
-  const a = cellCenter(60, 49);
+  const a = cellCenter(60, 50);
   sw.x = a.x; sw.z = a.z; sw.state = 'sweeping'; sw.sweepUntil = room.t + 10;
-  sw.setGoal(cellCenter(90, 49).x, a.z, true);
+  sw.setGoal(cellCenter(85, 50).x, a.z, true);
   place(room, p, a.x + 2, a.z);
   let pushed = false;
   for (let i = 0; i < 10; i++) { sw.update(0.05); room.t += 0.05; if (room.outbox.some((o) => o.ev.e === 'push' && o.to === p.id)) pushed = true; }
@@ -315,6 +361,7 @@ test('arts and crafters only charges players who finished all 7 exercises', () =
   const { room, p } = mk();
   room.frozenNpcs = false;
   p.phase = PHASE.TRAINING;
+  room.startChase(p);
   const arts = room.npcById.arts;
   arts.nextPeek = 0;
   run(room, 1);
@@ -335,9 +382,9 @@ test('arts and crafters only charges players who finished all 7 exercises', () =
 
 test('one player caught does not end the match for the others', () => {
   const { room, p } = mk();
+  room.startChase(p);
   const p2 = room.addPlayer('p2', 'Two');
   p.phase = PHASE.TRAINING; p2.phase = PHASE.TRAINING;
-  room.ajan.mood = 'angry';
   room.catchPlayer(p);
   assert.equal(p.phase, PHASE.CAUGHT);
   assert.equal(p2.phase, PHASE.TRAINING);

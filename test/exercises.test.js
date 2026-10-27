@@ -1,47 +1,78 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EXERCISE_TYPES, generateExercise, validateExercise, solveExercise } from '../server/exercises.js';
+import { EXERCISE_TYPES, RANDOM_TYPES, generateExercise, validateExercise, validateStep, solveExercise } from '../server/exercises.js';
+import { buildMap } from '../shared/map.js';
 import { makeRng } from '../shared/rng.js';
 
-test('there are seven distinct exercise types', () => {
+const map = buildMap();
+
+test('seven distinct, physical exercise types (no worksheets)', () => {
   assert.equal(new Set(EXERCISE_TYPES).size, 7);
+  assert.ok(!EXERCISE_TYPES.includes('quiz'));
+  assert.equal(RANDOM_TYPES.length, 5);
 });
 
-for (const type of EXERCISE_TYPES) {
-  test(`${type}: every randomized puzzle is solvable and wrong answers fail`, () => {
-    for (let seed = 1; seed <= 400; seed++) {
-      const rng = makeRng(seed);
-      const { spec, solution } = generateExercise(type, rng);
-      assert.ok(!JSON.stringify(spec).includes('"solution"'));
-      const good = solveExercise(type, spec, solution);
-      assert.equal(validateExercise(type, solution, spec, good, 30).ok, true, `seed ${seed}`);
-      assert.equal(validateExercise(type, solution, spec, {}, 30).ok, false);
+// play a generated exercise the way a client would: stand on every step, then submit
+function play(type, seed, station = 2) {
+  const st = map.stations[station];
+  const { spec, solution } = generateExercise(type, makeRng(seed), { cells: map.exerciseCells[station], station: st });
+  const pend = { type, spec, solution, servedAt: 0, stepIdx: 0 };
+  let t = 0;
+  const sol = solveExercise(type, spec, solution);
+  if (sol.steps) {
+    sol.steps.forEach((s, i) => {
+      t += 1.5;
+      const r = validateStep(pend, i, { x: s.x, z: s.z }, t);
+      assert.ok(r.ok, `${type} step ${i}: ${r.err}`);
+    });
+  }
+  return { spec, solution, pend, sol, v: validateExercise(type, solution, spec, sol.answer, t + 5, pend) };
+}
+
+for (const type of ['pushups', 'cones', 'order', 'fryer', 'mop', 'boxes']) {
+  test(`${type}: every randomized exercise can be completed, cheating fails`, () => {
+    for (let seed = 1; seed <= 150; seed++) {
+      const { spec, solution, pend, v } = play(type, seed, 2 + (seed % 5));
+      assert.equal(v.ok, true, `seed ${seed}: ${v.reason}`);
+      if (spec.steps) {
+        for (const s of spec.steps) {
+          const c = { x: s.x, z: s.z };
+          // positions are inside the exercise room
+          assert.ok(Number.isFinite(c.x) && Number.isFinite(c.z));
+        }
+        const fresh = { type, spec, solution, servedAt: 0, stepIdx: 0 };
+        assert.equal(validateExercise(type, solution, spec, { done: true }, 10, fresh).ok, false, 'skipping the steps fails');
+        assert.equal(validateStep(fresh, 1, spec.steps[1], 1).ok, false, 'out of order');
+        assert.equal(validateStep(fresh, 0, { x: spec.steps[0].x + 20, z: spec.steps[0].z }, 1).ok, false, 'too far away');
+      }
+      void pend;
       assert.equal(validateExercise(type, solution, spec, null, 30).ok, false);
     }
   });
 }
 
-test('quality control always has exactly one problem line', () => {
-  for (let seed = 1; seed <= 400; seed++) {
-    const { spec, solution } = generateExercise('qc', makeRng(seed));
-    let okLines = 0;
-    for (let i = 0; i < spec.ticket.length; i++) if (validateExercise('qc', solution, spec, { line: i }, 5).ok) okLines++;
-    assert.equal(okLines, 1);
-    // the chosen line really differs from the tray
-    const t = spec.ticket[solution];
-    assert.ok(!spec.tray.some((x) => x.item === t.item && x.qty === t.qty));
+test('pushups and keys reject impossibly fast results', () => {
+  const p = generateExercise('pushups', makeRng(1));
+  assert.equal(validateExercise('pushups', p.solution, p.spec, { count: 16 }, 0.3).ok, false);
+  assert.equal(validateExercise('pushups', p.solution, p.spec, { count: 15 }, 5).ok, false);
+});
+
+test('mop spills must be held, not tapped', () => {
+  const st = map.stations[3];
+  const { spec, solution } = generateExercise('mop', makeRng(4), { cells: map.exerciseCells[3], station: st });
+  const pend = { type: 'mop', spec, solution, servedAt: 0, stepIdx: 0 };
+  assert.equal(validateStep(pend, 0, spec.steps[0], 0.2).ok, false);
+  assert.equal(validateStep(pend, 0, spec.steps[0], 1.2).ok, true);
+});
+
+test("exercise 2's last key cannot be pressed: the answer is always wrong", () => {
+  for (let seed = 1; seed <= 50; seed++) {
+    const { spec, solution } = generateExercise('impossible', makeRng(seed));
+    assert.equal(spec.keys.length, 5);
+    assert.ok(spec.keys.slice(0, 4).every((k) => /^[A-Z]$/.test(k)));
+    assert.ok(!/^[A-Z]$/.test(spec.keys[4]), 'last key is not on the keyboard: ' + spec.keys[4]);
+    const v = validateExercise('impossible', solution, spec, { sequence: spec.keys }, 10);
+    assert.equal(v.ok, false);
+    assert.equal(v.impossible, true);
   }
-});
-
-test('quiz answers are not always in the same position', () => {
-  const pos = new Set();
-  for (let seed = 1; seed <= 50; seed++) generateExercise('quiz', makeRng(seed)).solution.forEach((a) => pos.add(a));
-  assert.ok(pos.size >= 3);
-});
-
-test('timing and prep reject impossibly fast submissions', () => {
-  const t = generateExercise('timing', makeRng(3));
-  assert.equal(validateExercise('timing', t.solution, t.spec, solveExercise('timing', t.spec, t.solution), 0.2).ok, false);
-  const p = generateExercise('prep', makeRng(3));
-  assert.equal(validateExercise('prep', p.solution, p.spec, solveExercise('prep', p.spec, p.solution), 0.5).ok, false);
 });

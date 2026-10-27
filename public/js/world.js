@@ -1,32 +1,32 @@
-// Builds the 3D school from the shared map: merged low-poly walls/floors/ceilings per surface,
-// recessed swinging doors, windows, exits, box-built props, wall decals and ceiling lights.
+// Builds the 3D school from the shared map: merged low-poly floors/ceilings per surface, THIN
+// walls on cell edges (doors and windows sit inside them), box-built props, decals and lights.
 import * as THREE from 'three';
 import { CELL, WALL_H } from '/shared/constants.js';
-import { T_FLOOR, T_WALL, T_WINDOW, T_EXIT, cellCenter } from '/shared/map.js';
+import { E_WALL, E_WINDOW, E_DOOR, E_EXIT, WALL_T, cellCenter } from '/shared/map.js';
 import {
   surfaceTex, doorTex, exitTex, signTex, chalkboardTex, posterTex, menuBoardTex, stationTex,
-  vendingTex, timerCanvas, drawTimer, iconTex, toTex, canvas,
+  vendingTex, timerCanvas, drawTimer, iconTex, imageTex, getImage, toTex, canvas,
 } from './textures.js';
 
 const ZONE = {
   hall: { wall: 'brick', floor: 'carpet', ceil: 'ceiling' },
-  class: { wall: 'plaster', floor: 'classcarpet', ceil: 'ceiling' },
-  exercise: { wall: 'gymwall', floor: 'gymfloor', ceil: 'ceiling' },
+  class: { wall: 'brick', floor: 'bluecarpet', ceil: 'ceiling' },
+  exercise: { wall: 'brick', floor: 'bluecarpet', ceil: 'ceiling' },
   cafe: { wall: 'cafewall', floor: 'cafefloor', ceil: 'ceiling' },
-  office: { wall: 'wood', floor: 'redcarpet', ceil: 'ceiling' },
+  office: { wall: 'brickgreen', floor: 'bluecarpet', ceil: 'ceiling' },
   faculty: { wall: 'beige', floor: 'classcarpet', ceil: 'ceiling' },
   janitor: { wall: 'concrete', floor: 'concrete', ceil: 'ceiling' },
   storage: { wall: 'concrete', floor: 'concrete', ceil: 'ceiling' },
   plaza: { wall: 'outbrick', floor: 'tiles', ceil: 'plazaceil' },
   kfc: { wall: 'kfcwall', floor: 'checker', ceil: 'ceiling' },
   popeyes: { wall: 'popwall', floor: 'browntile', ceil: 'ceiling' },
+  garden: { wall: 'hedge', floor: 'grass', ceil: null },
 };
-const SILL = 2.2, HEADER = 5.2, DOOR_H = 5.0;
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const SILL = 2.2, HEADER = 5.2, DOOR_H = 5.0, HEDGE_H = 3.4;
+const HT = WALL_T / 2;
 
 class Batch {
   constructor() { this.pos = []; this.uv = []; this.col = []; }
-  // quad from 4 corners (counter-clockwise when viewed from the front)
   quad(a, b, c, d, uvs, shade = 1) {
     this.pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     const [ua, ub, uc, ud] = uvs;
@@ -43,16 +43,16 @@ class Batch {
   }
 }
 
-// Box with per-face shading and a solid vertex colour (props).
+// Box with per-face shading and a solid vertex colour (props). UVs in world units / 2.
 function pushBox(b, x0, y0, z0, x1, y1, z1, color) {
   const c = new THREE.Color(color);
   const faces = [
-    [[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], 1.0],   // top
-    [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], 0.5],   // bottom
-    [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], 0.85],  // +z
-    [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], 0.8],   // -z
-    [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], 0.72],  // +x
-    [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], 0.68],  // -x
+    [[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], 1.0],
+    [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], 0.5],
+    [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], 0.85],
+    [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], 0.8],
+    [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], 0.72],
+    [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], 0.68],
   ];
   for (const [p0, p1, p2, p3, s] of faces) {
     b.pos.push(...p0, ...p1, ...p2, ...p0, ...p2, ...p3);
@@ -67,88 +67,129 @@ export function buildWorld(map) {
   const batches = new Map();
   const batch = (k) => { if (!batches.has(k)) batches.set(k, new Batch()); return batches.get(k); };
   const occluders = [];
-  const zoneOf = (cx, cz) => {
-    const r = map.room(cx, cz);
-    if (r) return r.type;
-    const d = map.doorAt[map.idx(cx, cz)];
-    if (d >= 0) {
-      const dd = map.doors[d];
-      const types = dd.rooms.map((i) => (i >= 0 ? map.rooms[i].type : 'hall'));
-      return types.includes('hall') ? 'hall' : types.includes('plaza') ? 'plaza' : types[0];
-    }
-    return 'hall';
-  };
+  const zoneOf = (cx, cz) => { const r = map.room(cx, cz); return r ? r.type : 'hall'; };
 
-  // vertical face on the boundary of floor cell (cx,cz) toward direction (dx,dz), spanning y0..y1
-  const wallFace = (key, cx, cz, dx, dz, y0, y1) => {
-    const x = cx * CELL, z = cz * CELL;
-    const shade = dx ? 0.86 : 1.0;
-    const v0 = y0 / CELL, v1 = y1 / CELL;
-    let a, b;
-    if (dx === 1) { a = [x + CELL, z]; b = [x + CELL, z + CELL]; }
-    if (dx === -1) { a = [x, z + CELL]; b = [x, z]; }
-    if (dz === 1) { a = [x + CELL, z + CELL]; b = [x, z + CELL]; }
-    if (dz === -1) { a = [x, z]; b = [x + CELL, z]; }
-    batch('w:' + key).quad([a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]], [[0, v0], [1, v0], [1, v1], [0, v1]], shade);
-  };
   const hquad = (key, x0, z0, x1, z1, y, up) => {
     const uv = [[x0 / CELL, z0 / CELL], [x1 / CELL, z0 / CELL], [x1 / CELL, z1 / CELL], [x0 / CELL, z1 / CELL]];
     if (up) batch(key).quad([x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0], [uv[3], uv[2], uv[1], uv[0]], 1);
     else batch(key).quad([x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1], uv, 0.95);
   };
 
-  const exitMeshes = [];
+  // ---------------------------------------------------------------- floors & ceilings
   for (let cz = 0; cz < map.H; cz++)
     for (let cx = 0; cx < map.W; cx++) {
-      const t = map.tile(cx, cz);
-      if (t === T_FLOOR) {
-        const z = ZONE[zoneOf(cx, cz)] || ZONE.hall;
-        hquad('f:' + z.floor, cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL, 0, true);
-        hquad('c:' + z.ceil, cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL, WALL_H, false);
-        for (const [dx, dz] of DIRS) {
-          const nt = map.tile(cx + dx, cz + dz);
-          if (nt === T_WALL) wallFace(z.wall, cx, cz, dx, dz, 0, WALL_H);
-          else if (nt === T_WINDOW) { wallFace(z.wall, cx, cz, dx, dz, 0, SILL); wallFace(z.wall, cx, cz, dx, dz, HEADER, WALL_H); }
-          else if (nt === T_EXIT) {
-            wallFace(z.wall, cx, cz, dx, dz, DOOR_H, WALL_H);
-            const ex = map.exits.find((e) => e.x === cx + dx && e.z === cz + dz);
-            const m = new THREE.Mesh(new THREE.PlaneGeometry(CELL, DOOR_H), new THREE.MeshBasicMaterial({ map: exitTex(false) }));
-            const c = cellCenter(cx, cz);
-            m.position.set(c.x + dx * (CELL / 2 - 0.01), DOOR_H / 2, c.z + dz * (CELL / 2 - 0.01));
-            m.rotation.y = Math.atan2(-dx, -dz);
-            root.add(m);
-            exitMeshes.push({ mesh: m, exit: ex });
-          }
-          // lintel above doorways
-          if (map.doorAt[map.idx(cx, cz)] >= 0) continue;
-          if (nt === T_FLOOR && map.doorAt[map.idx(cx + dx, cz + dz)] >= 0) wallFace(z.wall, cx, cz, dx, dz, DOOR_H, WALL_H);
-        }
-        if (map.doorAt[map.idx(cx, cz)] >= 0) hquad('c:' + z.ceil, cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL, DOOR_H, false);
-      } else if (t === T_WINDOW) {
-        // sill top, header underside, jambs, glass
-        let zk = 'hall';
-        for (const [dx, dz] of DIRS) if (map.tile(cx + dx, cz + dz) === T_FLOOR) { zk = zoneOf(cx + dx, cz + dz); break; }
-        const z = ZONE[zk];
-        hquad('f:' + z.wall, cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL, SILL, true);
-        hquad('c:' + z.wall, cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL, HEADER, false);
-        for (const [dx, dz] of DIRS) if (map.tile(cx + dx, cz + dz) === T_WALL) wallFace(z.wall, cx, cz, dx, dz, SILL, HEADER);
-        const w = map.windows.find((ww) => ww.x === cx && ww.z === cz);
-        const c = cellCenter(cx, cz);
-        const gb = batch('glass');
-        if (w && w.axis === 'z') gb.quad([c.x - CELL / 2, SILL, c.z], [c.x + CELL / 2, SILL, c.z], [c.x + CELL / 2, HEADER, c.z], [c.x - CELL / 2, HEADER, c.z], [[0, 0], [1, 0], [1, 1], [0, 1]]);
-        else gb.quad([c.x, SILL, c.z - CELL / 2], [c.x, SILL, c.z + CELL / 2], [c.x, HEADER, c.z + CELL / 2], [c.x, HEADER, c.z - CELL / 2], [[0, 0], [1, 0], [1, 1], [0, 1]]);
-        // window frame cross bar
-        pushBox(batch('props'), c.x - (w.axis === 'z' ? CELL / 2 : 0.06), SILL + 1.45, c.z - (w.axis === 'z' ? 0.06 : CELL / 2), c.x + (w.axis === 'z' ? CELL / 2 : 0.06), SILL + 1.6, c.z + (w.axis === 'z' ? 0.06 : CELL / 2), '#dddddd');
+      if (!map.isFloor(cx, cz)) continue;
+      const z = ZONE[zoneOf(cx, cz)] || ZONE.hall;
+      hquad('f:' + z.floor, cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL, 0, true);
+      if (z.ceil) hquad('c:' + z.ceil, cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL, WALL_H, false);
+    }
+  // grass all around outside, only visible over the garden hedge
+  hquad('f:grass', -200, -200, map.W * CELL + 200, map.H * CELL + 200, -0.02, true);
+
+  // ---------------------------------------------------------------- thin walls
+  // A face of edge e as seen from cell (cx,cz): offset half a wall thickness toward that cell.
+  const exitMeshes = [];
+  const face = (key, e, cx, cz, y0, y1, ext = HT) => {
+    if (key === 'brickgreen') {
+      // office walls: white brick with a green band along the ceiling
+      const band = WALL_H - 0.7;
+      if (y0 < band) face('brick', e, cx, cz, y0, Math.min(y1, band), ext);
+      if (y1 > band) face('greenband', e, cx, cz, Math.max(y0, band), y1, ext);
+      return;
+    }
+    const vertical = e.o === 'v';
+    const c = cellCenter(cx, cz);
+    const shade = vertical ? 0.86 : 1.0;
+    const v0 = y0 / CELL, v1 = y1 / CELL;
+    if (vertical) {
+      const x = e.x0 + (c.x > e.x0 ? HT : -HT);
+      const za = e.z0 - ext, zb = e.z1 + ext;
+      const ua = za / CELL, ub = zb / CELL;
+      // face looking toward the cell
+      if (c.x > e.x0) batch('w:' + key).quad([x, y0, zb], [x, y0, za], [x, y1, za], [x, y1, zb], [[ub, v0], [ua, v0], [ua, v1], [ub, v1]], shade);
+      else batch('w:' + key).quad([x, y0, za], [x, y0, zb], [x, y1, zb], [x, y1, za], [[ua, v0], [ub, v0], [ub, v1], [ua, v1]], shade);
+    } else {
+      const z = e.z0 + (c.z > e.z0 ? HT : -HT);
+      const xa = e.x0 - ext, xb = e.x1 + ext;
+      const ua = xa / CELL, ub = xb / CELL;
+      if (c.z > e.z0) batch('w:' + key).quad([xa, y0, z], [xb, y0, z], [xb, y1, z], [xa, y1, z], [[ua, v0], [ub, v0], [ub, v1], [ua, v1]], shade);
+      else batch('w:' + key).quad([xb, y0, z], [xa, y0, z], [xa, y1, z], [xb, y1, z], [[ub, v0], [ua, v0], [ua, v1], [ub, v1]], shade);
+    }
+  };
+  // small faces closing the wall thickness at the ends of an opening (door / window jambs)
+  const jambs = (key, e, y0, y1) => {
+    const b = batch('w:' + key);
+    const v0 = y0 / CELL, v1 = y1 / CELL;
+    if (e.o === 'v') {
+      for (const [zz, dir] of [[e.z0, 1], [e.z1, -1]]) {
+        const a = [e.x0 - HT, zz], c2 = [e.x0 + HT, zz];
+        if (dir > 0) b.quad([a[0], y0, zz], [c2[0], y0, zz], [c2[0], y1, zz], [a[0], y1, zz], [[0, v0], [0.08, v0], [0.08, v1], [0, v1]], 0.7);
+        else b.quad([c2[0], y0, zz], [a[0], y0, zz], [a[0], y1, zz], [c2[0], y1, zz], [[0, v0], [0.08, v0], [0.08, v1], [0, v1]], 0.7);
+      }
+    } else {
+      for (const [xx, dir] of [[e.x0, 1], [e.x1, -1]]) {
+        if (dir > 0) b.quad([xx, y0, e.z0 + HT], [xx, y0, e.z0 - HT], [xx, y1, e.z0 - HT], [xx, y1, e.z0 + HT], [[0, v0], [0.08, v0], [0.08, v1], [0, v1]], 0.7);
+        else b.quad([xx, y0, e.z0 - HT], [xx, y0, e.z0 + HT], [xx, y1, e.z0 + HT], [xx, y1, e.z0 - HT], [[0, v0], [0.08, v0], [0.08, v1], [0, v1]], 0.7);
       }
     }
+  };
+  const slab = (key, e, y, up) => {
+    if (e.o === 'v') hquad(key, e.x0 - HT, e.z0, e.x0 + HT, e.z1, y, up);
+    else hquad(key, e.x0, e.z0 - HT, e.x1, e.z0 + HT, y, up);
+  };
 
-  // ceiling lights
+  for (const e of map.edges) {
+    const sides = [e.cellA, e.cellB].filter((c) => c && map.isFloor(c[0], c[1]));
+    if (!sides.length) continue;
+    const other = (c) => (c === e.cellA ? e.cellB : e.cellA);
+    for (const c of sides) {
+      const zt = zoneOf(c[0], c[1]);
+      let key = (ZONE[zt] || ZONE.hall).wall;
+      let top = WALL_H;
+      if (zt === 'garden') {
+        const o = other(c);
+        if (o && map.isFloor(o[0], o[1])) key = 'outbrick'; // the school's front wall
+        else top = HEDGE_H;
+      }
+      if (e.t === E_WALL) face(key, e, c[0], c[1], 0, top);
+      else if (e.t === E_WINDOW) { face(key, e, c[0], c[1], 0, SILL, 0); face(key, e, c[0], c[1], HEADER, WALL_H, 0); }
+      else if (e.t === E_DOOR || e.t === E_EXIT) face(key, e, c[0], c[1], DOOR_H, WALL_H, 0);
+    }
+    const key0 = (ZONE[zoneOf(sides[0][0], sides[0][1])] || ZONE.hall).wall;
+    if (e.t === E_WINDOW) {
+      slab('f:' + key0, e, SILL, true);
+      slab('c:' + key0, e, HEADER, false);
+      jambs(key0, e, SILL, HEADER);
+      const gb = batch('glass');
+      if (e.o === 'v') gb.quad([e.x0, SILL, e.z0], [e.x0, SILL, e.z1], [e.x0, HEADER, e.z1], [e.x0, HEADER, e.z0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      else gb.quad([e.x0, SILL, e.z0], [e.x1, SILL, e.z0], [e.x1, HEADER, e.z0], [e.x0, HEADER, e.z0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      const vertical = e.o === 'v';
+      pushBox(batch('props'), vertical ? e.x0 - 0.05 : e.x0, SILL + 1.45, vertical ? e.z0 : e.z0 - 0.05, vertical ? e.x0 + 0.05 : e.x1, SILL + 1.58, vertical ? e.z1 : e.z0 + 0.05, '#dddddd');
+    }
+    if (e.t === E_DOOR || e.t === E_EXIT) {
+      slab('c:' + key0, e, DOOR_H, false);
+      jambs(key0, e, 0, DOOR_H);
+    }
+    if (e.t === E_EXIT) {
+      const ex = map.exits.find((x) => x.edge === e);
+      const c = sides[0];
+      const cc = cellCenter(c[0], c[1]);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(CELL, DOOR_H), new THREE.MeshBasicMaterial({ map: exitTex(false) }));
+      const nx = e.o === 'v' ? Math.sign(cc.x - e.x0) : 0, nz = e.o === 'h' ? Math.sign(cc.z - e.z0) : 0;
+      m.position.set((e.x0 + e.x1) / 2 + nx * 0.02, DOOR_H / 2, (e.z0 + e.z1) / 2 + nz * 0.02);
+      m.rotation.y = Math.atan2(nx, nz);
+      root.add(m);
+      exitMeshes.push({ mesh: m, exit: ex });
+    }
+  }
+
+  // ---------------------------------------------------------------- ceiling lights
   const lb = batch('light');
   for (let cz = 0; cz < map.H; cz++)
     for (let cx = 0; cx < map.W; cx++) {
-      if (map.tile(cx, cz) !== T_FLOOR || map.doorAt[map.idx(cx, cz)] >= 0) continue;
+      if (!map.isFloor(cx, cz)) continue;
       const r = map.room(cx, cz);
-      if (!r) continue;
+      if (!r || r.type === 'garden') continue;
       const midx = Math.floor((r.x0 + r.x1) / 2), midz = Math.floor((r.z0 + r.z1) / 2);
       const isHall = r.type === 'hall';
       const on = isHall ? ((r.x1 - r.x0 > r.z1 - r.z0) ? cz === midz && cx % 5 === 0 : cx === midx && cz % 5 === 0) : (cx - r.x0) % 4 === 2 && (cz - r.z0) % 4 === 2;
@@ -166,16 +207,33 @@ export function buildWorld(map) {
   for (const p of map.props) {
     const x0 = p.x - p.w / 2, x1 = p.x + p.w / 2, z0 = p.z - p.d / 2, z1 = p.z + p.d / 2;
     switch (p.type) {
+      case 'woodesk': {
+        // REFCLASS: chunky attached wooden desks
+        const wb = batch('wood');
+        pushBox(wb, x0, 0, z0, x1, p.h - 0.18, z1, '#ffffff');
+        pushBox(wb, x0 - 0.12, p.h - 0.18, z0 - 0.12, x1 + 0.12, p.h, z1 + 0.12, '#f2e2c8');
+        break;
+      }
+      case 'bus': {
+        const t = getImage('random/Bus');
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(p.w, p.w * (t ? t.height / t.width : 0.42)), new THREE.MeshBasicMaterial({ map: t ? imageTex('random/Bus') : null, alphaTest: 0.5, side: THREE.DoubleSide }));
+        m.position.set(p.x, (p.w * (t ? t.height / t.width : 0.42)) / 2, p.z);
+        m.rotation.y = Math.PI; // the readable side faces the school entrance
+        root.add(m);
+        break;
+      }
       case 'desk':
         box(x0, p.h - 0.12, z0, x1, p.h, z1, '#c79a5b');
         box(x0 + 0.05, 0.6, z0 + 0.05, x1 - 0.05, p.h - 0.12, z0 + 0.6, '#8a8f96');
         for (const [lx, lz] of [[x0 + 0.1, z0 + 0.1], [x1 - 0.2, z0 + 0.1], [x0 + 0.1, z1 - 0.2], [x1 - 0.2, z1 - 0.2]]) box(lx, 0, lz, lx + 0.1, p.h - 0.12, lz + 0.1, '#5d6066');
         break;
-      case 'tdesk': case 'pdesk':
-        box(x0, p.h - 0.15, z0, x1, p.h, z1, p.type === 'pdesk' ? '#6b3e1c' : '#a7773f');
-        box(x0 + 0.1, 0, z0 + 0.1, x0 + 0.9, p.h - 0.15, z1 - 0.1, p.type === 'pdesk' ? '#5a3216' : '#8f6533');
-        box(x1 - 0.9, 0, z0 + 0.1, x1 - 0.1, p.h - 0.15, z1 - 0.1, p.type === 'pdesk' ? '#5a3216' : '#8f6533');
+      case 'tdesk': case 'pdesk': {
+        // reference office: solid orange-wood desks
+        const wb = batch('wood');
+        pushBox(wb, x0 + 0.1, 0, z0 + 0.1, x1 - 0.1, p.h - 0.15, z1 - 0.1, '#ffffff');
+        pushBox(wb, x0, p.h - 0.15, z0, x1, p.h, z1, '#f2e2c8');
         break;
+      }
       case 'chair':
         box(x0, 0.75, z0, x1, 0.85, z1, '#d33a2c');
         box(x0, 0.85, z1 - 0.1, x1, 1.7, z1, '#d33a2c');
@@ -253,7 +311,7 @@ export function buildWorld(map) {
         const g = new THREE.BoxGeometry(face === 'n' || face === 's' ? p.w : 0.5, 1.6, face === 'n' || face === 's' ? 0.5 : p.d);
         const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d4249' }));
         mesh.position.set(p.x - n[0] * 0.3, 2.0, p.z - n[1] * 0.3);
-        const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: stationTex('order', false, p.stationId + 1) }));
+        const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: stationTex('pushups', false, p.stationId + 1) }));
         scr.position.set(n[0] * 0.26, 0, n[1] * 0.26);
         scr.rotation.y = Math.atan2(n[0], n[1]);
         mesh.add(scr);
@@ -278,14 +336,14 @@ export function buildWorld(map) {
     }
   }
 
-  // ---------------------------------------------------------------- doors
+  // ---------------------------------------------------------------- doors (inside the thin walls)
   const doorMeshes = [];
   for (const d of map.doors) {
-    const c = cellCenter(d.x, d.z);
     const types = d.rooms.map((i) => (i >= 0 ? map.rooms[i] : null));
-    const other = types.find((r) => r && r.type !== 'hall' && r.type !== 'plaza') || types.find((r) => r && r.type !== 'hall') || types[0];
+    const other = types.find((r) => r && r.type !== 'hall' && r.type !== 'plaza' && r.type !== 'garden') || types.find((r) => r && r.type !== 'hall') || types[0];
     let kind = 'normal', label = '';
-    if (other) {
+    if (d.entrance) { kind = 'entrance'; label = 'ENTRANCE'; }
+    else if (other) {
       if (other.type === 'office') { kind = 'office'; label = 'PRINCIPAL'; }
       else if (other.type === 'faculty') { kind = 'faculty'; label = 'FACULTY ONLY'; }
       else if (other.type === 'janitor') { kind = 'janitor'; label = 'JANITOR'; }
@@ -297,27 +355,29 @@ export function buildWorld(map) {
       else if (other.type === 'storage') { label = 'STORAGE'; }
       else label = other.name.toUpperCase().slice(0, 12);
     }
-    // the panel sits at the end of the doorway facing `other` and swings into the doorway
-    const otherIdx = other ? d.rooms.indexOf(other.index) : 1;
-    const sgn = otherIdx === 0 ? -1 : 1; // direction toward `other` along the travel axis
+    // The panel fills the opening in the wall, hinged at one end. It swings 90 degrees into
+    // the room side (the non-hallway side) when open.
+    const roomCell = d.cells.find(([cx, cz]) => { const r = map.room(cx, cz); return r && r.type !== 'hall'; }) || d.cells[1];
+    const rc = cellCenter(roomCell[0], roomCell[1]);
     const pivot = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({ map: doorTex(kind, label) });
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(CELL, DOOR_H, 0.14), [
-      new THREE.MeshBasicMaterial({ color: '#777' }), new THREE.MeshBasicMaterial({ color: '#777' }),
-      new THREE.MeshBasicMaterial({ color: '#777' }), new THREE.MeshBasicMaterial({ color: '#777' }), mat, mat,
-    ]);
-    panel.position.set(CELL / 2, DOOR_H / 2, 0);
+    const edgeMat = new THREE.MeshBasicMaterial({ color: '#777' });
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(CELL - 0.04, DOOR_H - 0.02, 0.12), [edgeMat, edgeMat, edgeMat, edgeMat, mat, mat]);
+    panel.position.set((CELL - 0.04) / 2 + 0.02, DOOR_H / 2, 0);
     pivot.add(panel);
+    let closedRot, openRot;
     if (d.axis === 'z') {
-      pivot.position.set(c.x - CELL / 2, 0, c.z + sgn * (CELL / 2 - 0.1));
-      pivot.rotation.y = 0;
+      // horizontal wall edge: panel along +x from the west end
+      pivot.position.set(d.x - CELL / 2, 0, d.z);
+      closedRot = 0;
+      openRot = rc.z > d.z ? -Math.PI / 2 : Math.PI / 2;
     } else {
-      pivot.position.set(c.x + sgn * (CELL / 2 - 0.1), 0, c.z + CELL / 2);
-      pivot.rotation.y = Math.PI / 2;
+      // vertical wall edge: panel along -z from the south end (rotation PI/2 maps +x to -z)
+      pivot.position.set(d.x, 0, d.z + CELL / 2);
+      closedRot = Math.PI / 2;
+      openRot = rc.x > d.x ? Math.PI / 2 - Math.PI / 2 : Math.PI / 2 + Math.PI / 2;
     }
-    const closedRot = pivot.rotation.y;
-    // open: swing toward the inside of the doorway (away from `other`)
-    const openRot = closedRot + sgn * (Math.PI / 2);
+    pivot.rotation.y = closedRot;
     pivot.userData = { kind: 'door', id: d.id, closedRot, openRot, t: 0 };
     panel.userData = { kind: 'door', id: d.id };
     root.add(pivot);
@@ -340,6 +400,15 @@ export function buildWorld(map) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(dc.w, dc.h), new THREE.MeshBasicMaterial({ map: tex, transparent: dc.type === 'exitsign' ? false : false }));
     m.position.set(dc.x + dc.nx * 0.03, dc.y, dc.z + dc.nz * 0.03);
     m.rotation.y = Math.atan2(dc.nx, dc.nz);
+    if (dc.hanging) {
+      // a sign hanging in the hall: readable from both directions (two back-to-back faces)
+      m.material.alphaTest = 0.5;
+      const back = m.clone();
+      back.rotation.y += Math.PI;
+      back.position.z -= dc.nz * 0.04; back.position.x -= dc.nx * 0.04;
+      root.add(back);
+    }
+    else if (dc.type === 'exitsign') m.material.alphaTest = 0.5;
     root.add(m);
   }
 
@@ -352,12 +421,13 @@ export function buildWorld(map) {
     if (k === 'glass') mat = glassMat;
     else if (k === 'light') mat = lightMat;
     else if (k === 'props') mat = new THREE.MeshBasicMaterial({ vertexColors: true, map: propTex });
-    else mat = new THREE.MeshBasicMaterial({ map: surfaceTex(k.slice(2)), vertexColors: true });
+    else if (k === 'wood') mat = new THREE.MeshBasicMaterial({ vertexColors: true, map: surfaceTex('deskwood') });
+    else mat = new THREE.MeshBasicMaterial({ map: surfaceTex(k.slice(2)), vertexColors: true, side: k === 'f:grass' ? THREE.FrontSide : THREE.FrontSide });
     const mesh = new THREE.Mesh(b.geometry(), mat);
     mesh.matrixAutoUpdate = false;
     if (k === 'glass') mesh.renderOrder = 5;
     root.add(mesh);
-    if (k.startsWith('w:') || k === 'props') occluders.push(mesh);
+    if (k.startsWith('w:') || k === 'props' || k === 'wood') occluders.push(mesh);
   }
 
   return {

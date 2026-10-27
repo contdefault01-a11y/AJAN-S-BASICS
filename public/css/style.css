@@ -162,3 +162,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 .menu-row .price { font-weight: bold; text-align: right; }
 .menu-row .cal { color: #a0280a; text-align: right; }
 .menu-row.cant { opacity: 0.55; }
+
+/* ---------------- in-world exercise HUD ---------------- */
+#xhud { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); width: min(460px, 70vw); background: rgba(255,255,255,0.9); border: 4px solid #000; box-shadow: 5px 5px 0 #000; padding: 6px 12px 8px; text-align: center; }
+#xhud-title { font-weight: bold; color: var(--red); font-size: 20px; }
+#xhud-big { font-size: 54px; font-weight: bold; line-height: 1.05; font-family: Arial Black, Arial, sans-serif; }
+#xhud-prog { font-weight: bold; font-size: 16px; }
+#xhud-help { font-size: 13px; color: #333; }
+#xhud-timer { height: 8px; border: 2px solid #000; margin: 4px 0; background: #ddd; }
+#xhud-bar { height: 100%; background: var(--red); width: 0; }
+#xhud-gauge { position: relative; height: 30px; border: 3px solid #000; background: linear-gradient(90deg, #ffe0a0, #ff9a3a, #d33); margin: 4px 0; }
+#xhud-zone { position: absolute; top: 0; bottom: 0; background: rgba(20, 220, 20, 0.9); border-left: 2px solid #000; border-right: 2px solid #000; }
+#xhud-needle { position: absolute; top: -6px; bottom: -6px; width: 5px; margin-left: -2px; background: #000; }

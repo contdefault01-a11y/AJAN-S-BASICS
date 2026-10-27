@@ -1,137 +1,121 @@
-// Seven distinct training exercises. The server generates a randomized puzzle (spec + secret
-// solution) when a player opens a station and validates whatever the client submits.
-// The spec sent to the client never contains the solution unless the exercise is a memory /
-// dexterity task whose content must be shown to the player anyway.
+// Training exercises are physical, in-world activities: you move around the exercise room and
+// press keys (E / G / Space...). The server generates each one (positions come from the room's
+// free cells), checks every positional step against the player's real position, and validates
+// the result. Exercise 2 is AJAN's trick: its last prompt is impossible.
+import { cellCenter } from '../shared/map.js';
 
-export const EXERCISE_TYPES = ['order', 'register', 'timing', 'ingredients', 'prep', 'quiz', 'qc'];
+export const EXERCISE_TYPES = ['pushups', 'impossible', 'cones', 'order', 'fryer', 'mop', 'boxes'];
+export const RANDOM_TYPES = ['cones', 'order', 'fryer', 'mop', 'boxes'];
 
 export const EXERCISE_INFO = {
-  order:       { title: 'ORDER ASSEMBLY',      blurb: 'Put exactly what is on the ticket onto the tray.' },
-  register:    { title: 'CASH REGISTER',       blurb: 'Ring up the exact total using the register keys.' },
-  timing:      { title: 'KITCHEN TIMING',      blurb: 'Stop the fryer needle inside the green zone 3 times.' },
-  ingredients: { title: 'INGREDIENT SELECTION', blurb: 'Pick only the ingredients the recipe asks for.' },
-  prep:        { title: 'FOOD PREPARATION',    blurb: 'Watch the prep steps light up, then repeat them in order.' },
-  quiz:        { title: 'TRAINING QUIZ',       blurb: 'Answer all three questions correctly.' },
-  qc:          { title: 'QUALITY CONTROL',     blurb: 'Compare the ticket with the tray and find the problem.' },
+  pushups:    { title: 'PUSH-UPS',        blurb: 'Press the keys shown, alternating E and G, as fast as you can!' },
+  impossible: { title: 'REACTION KEYS',   blurb: 'Press each key as it appears.' },
+  sequence:   { title: 'REACTION KEYS',   blurb: 'Press each key as it appears.' },
+  cones:      { title: 'CONE SPRINT',     blurb: 'Run to the glowing cone and press E. Hit them all before time runs out.' },
+  order:      { title: 'ORDER RUN',       blurb: 'Grab the food in order (E), then bring it to the counter.' },
+  fryer:      { title: 'KITCHEN TIMING',  blurb: 'Press E when the needle is in the green zone, 3 times.' },
+  mop:        { title: 'CLEAN-UP',        blurb: 'Walk to each spill and HOLD E to mop it up.' },
+  boxes:      { title: 'BOX CARRY',       blurb: 'Pick up a box (E) and carry it to the shelf (E). 3 boxes.' },
 };
 
-const FOODS = ['Drumstick', 'Wings', 'Burger', 'Fries', 'Biscuit', 'Coleslaw', 'Soda', 'Corn', 'Nuggets', 'Pie'];
+const KEYS = ['E', 'G', 'R', 'F', 'T', 'Q', 'C', 'V', 'X', 'Z'];
+const IMPOSSIBLE_KEYS = ['Ж', 'Ω', '¿', '§', 'ß'];
+const FOODS = ['burger', 'fries', 'soda', 'bucket', 'pie', 'nuggets'];
 
-const RECIPES = [
-  { name: 'Spicy Chicken Sandwich', need: ['Brioche Bun', 'Spicy Fillet', 'Pickles', 'Spicy Mayo'] },
-  { name: 'Classic Chicken Wrap', need: ['Tortilla', 'Tenders', 'Lettuce', 'Ranch'] },
-  { name: 'Famous Bowl', need: ['Mashed Potatoes', 'Corn', 'Popcorn Chicken', 'Gravy', 'Cheese'] },
-  { name: 'Cajun Fries Basket', need: ['Fries', 'Cajun Seasoning', 'Salt'] },
-  { name: 'Breakfast Biscuit', need: ['Biscuit', 'Egg', 'Cheese', 'Bacon'] },
-  { name: 'Chicken Burger Deluxe', need: ['Sesame Bun', 'Fillet', 'Lettuce', 'Tomato', 'Mayo'] },
-];
-const ALL_INGREDIENTS = [...new Set(RECIPES.flatMap((r) => r.need).concat(['Onion', 'Ketchup', 'Mustard', 'Jalapenos', 'Honey', 'Butter', 'Rice']))];
+function pickCells(rng, cells, n, minGap = 3) {
+  const out = [];
+  const pool = rng.shuffle(cells.slice());
+  for (const c of pool) {
+    const p = cellCenter(c[0], c[1]);
+    if (out.every((q) => Math.hypot(q.x - p.x, q.z - p.z) >= minGap * 2.5)) out.push(p);
+    if (out.length >= n) break;
+  }
+  while (out.length < n && pool.length) out.push(cellCenter(...pool[out.length % pool.length]));
+  return out.map((p) => ({ x: +p.x.toFixed(2), z: +p.z.toFixed(2) }));
+}
 
-const PREP_STEPS = [
-  { id: 'bread', label: 'BREAD', color: '#e8c07a' },
-  { id: 'fry', label: 'FRY', color: '#ff8a00' },
-  { id: 'drain', label: 'DRAIN', color: '#8ad0ff' },
-  { id: 'season', label: 'SEASON', color: '#ff3b3b' },
-  { id: 'box', label: 'BOX', color: '#ffffff' },
-  { id: 'serve', label: 'SERVE', color: '#5be35b' },
-];
-
-const QUIZ_BANK = [
-  { q: 'How many training exercises must you finish?', a: '7', w: ['5', '3', '10'] },
-  { q: 'How many calories does AJAN want you to eat?', a: '7,000', w: ['700', '2,000', '70,000'] },
-  { q: 'What does the Principal hate seeing in the halls?', a: 'Running', w: ['Walking', 'Reading', 'Eating apples'] },
-  { q: 'Which item cuts a jump rope?', a: 'Safety Scissors', w: ['AJAN Cola', 'Alarm Clock', 'Protein Bar'] },
-  { q: 'Fryer oil should be changed when it is...', a: 'Dark and smoky', w: ['Fresh', 'Cold', 'Sparkling'] },
-  { q: 'Where do you buy food in this school?', a: 'KFC and Popeyes', w: ['The gym', 'The janitor closet', 'Room 102'] },
-  { q: 'A customer pays $10 for a $7.50 meal. Change?', a: '$2.50', w: ['$3.50', '$2.00', '$17.50'] },
-  { q: 'Wash your hands for at least...', a: '20 seconds', w: ['2 seconds', '1 minute of thinking', 'Never'] },
-  { q: 'What does the Bully want from you?', a: 'One of your items', w: ['Your cash', 'A hug', 'Homework'] },
-  { q: 'Hot food must be kept...', a: 'Hot', w: ['On the floor', 'In your pocket', 'Frozen'] },
-  { q: 'Who sweeps the halls?', a: 'Gotta Sweep', w: ['1st Prize', 'Playtime', 'The Principal'] },
-  { q: 'What does AJAN do when he walks?', a: 'Stomps', w: ['Tiptoes', 'Moonwalks', 'Hovers'] },
-  { q: 'The first thing to say to a customer is...', a: 'Welcome! Can I take your order?', w: ['Go away', 'Run!', 'We are closed'] },
-  { q: 'Which character pushes you with a hug?', a: '1st Prize', w: ['Arts and Crafters', 'The Bully', 'AJAN'] },
-];
-
-const pickN = (rng, arr, n) => rng.shuffle(arr.slice()).slice(0, n);
-
-export function generateExercise(type, rng) {
+// ctx: { cells: free cells of the room, station: {x, z} }
+export function generateExercise(type, rng, ctx = { cells: [[10, 10], [14, 10], [10, 14], [14, 14], [18, 18], [6, 6]], station: { x: 30, z: 30 } }) {
+  const st = { x: +ctx.station.x.toFixed(2), z: +ctx.station.z.toFixed(2) };
   switch (type) {
+    case 'pushups':
+      return { spec: { type, keys: ['E', 'G'], count: 16, time: 20 }, solution: 16 };
+    case 'sequence':
+    case 'impossible': {
+      const keys = rng.shuffle(KEYS.slice()).slice(0, 5);
+      if (type === 'impossible') keys[4] = rng.pick(IMPOSSIBLE_KEYS);
+      return { spec: { type, keys, perKey: 2.2 }, solution: keys };
+    }
+    case 'cones': {
+      const pts = pickCells(rng, ctx.cells, 5, 2);
+      return { spec: { type, time: 40, steps: pts.map((p) => ({ ...p, kind: 'cone' })) }, solution: pts.length };
+    }
     case 'order': {
-      const items = pickN(rng, FOODS, rng.int(3, 4));
-      const ticket = items.map((item) => ({ item, qty: rng.int(1, 3) }));
-      const options = rng.shuffle(pickN(rng, FOODS.filter((f) => !items.includes(f)), 4).concat(items));
-      return { spec: { type, ticket, options }, solution: Object.fromEntries(ticket.map((t) => [t.item, t.qty])) };
+      const pts = pickCells(rng, ctx.cells, 3, 2);
+      const foods = rng.shuffle(FOODS.slice()).slice(0, 3);
+      const steps = pts.map((p, i) => ({ ...p, kind: 'food', food: foods[i] }));
+      steps.push({ ...st, kind: 'counter' });
+      return { spec: { type, time: 50, steps }, solution: steps.length };
     }
-    case 'register': {
-      const target = rng.int(101, 1999);
-      return { spec: { type, target, keys: [1000, 500, 100, 25, 10, 5, 1] }, solution: target };
-    }
-    case 'timing': {
+    case 'fryer': {
       const zones = [];
       for (let i = 0; i < 3; i++) {
-        const width = 0.12 + rng() * 0.06;
+        const width = 0.14 + rng() * 0.06;
         zones.push({ start: 0.1 + rng() * (0.8 - width), width });
       }
       return { spec: { type, zones, speed: 0.55 + rng() * 0.25, maxMisses: 2 }, solution: zones };
     }
-    case 'ingredients': {
-      const recipe = rng.pick(RECIPES);
-      const distract = pickN(rng, ALL_INGREDIENTS.filter((i) => !recipe.need.includes(i)), 10 - recipe.need.length);
-      return { spec: { type, recipe: recipe.name, need: recipe.need, options: rng.shuffle(recipe.need.concat(distract)) }, solution: recipe.need.slice().sort() };
+    case 'mop': {
+      const pts = pickCells(rng, ctx.cells, 4, 2);
+      return { spec: { type, time: 50, hold: 1.0, steps: pts.map((p) => ({ ...p, kind: 'spill', hold: 1.0 })) }, solution: pts.length };
     }
-    case 'prep': {
-      const len = 5;
-      const seq = [];
-      for (let i = 0; i < len; i++) {
-        let s;
-        do s = rng.int(0, PREP_STEPS.length - 1); while (seq.length && s === seq[seq.length - 1]);
-        seq.push(s);
-      }
-      return { spec: { type, steps: PREP_STEPS, sequence: seq, flashMs: 650 }, solution: seq };
-    }
-    case 'quiz': {
-      const qs = pickN(rng, QUIZ_BANK, 3).map((q) => {
-        const choices = rng.shuffle([q.a, ...q.w]);
-        return { q: q.q, choices, answer: choices.indexOf(q.a) };
-      });
-      return { spec: { type, questions: qs.map(({ q, choices }) => ({ q, choices })) }, solution: qs.map((q) => q.answer) };
-    }
-    case 'qc': {
-      const items = pickN(rng, FOODS, 5);
-      const ticket = items.map((item) => ({ item, qty: rng.int(1, 2) }));
-      const bad = rng.int(0, ticket.length - 1);
-      const mode = rng.pick(['missing', 'wrong', 'qty']);
-      const tray = ticket.map((t) => ({ ...t }));
-      if (mode === 'missing') tray.splice(bad, 1);
-      else if (mode === 'wrong') tray[bad] = { item: rng.pick(FOODS.filter((f) => !items.includes(f))), qty: ticket[bad].qty };
-      else tray[bad] = { item: ticket[bad].item, qty: ticket[bad].qty + 1 };
-      return { spec: { type, ticket, tray: rng.shuffle(tray) }, solution: bad };
+    case 'boxes': {
+      const pts = pickCells(rng, ctx.cells, 4, 2);
+      const shelf = pts[0];
+      const steps = [];
+      for (let i = 1; i <= 3; i++) steps.push({ ...pts[i], kind: 'box' }, { ...shelf, kind: 'shelf' });
+      return { spec: { type, time: 60, steps }, solution: steps.length };
     }
     default:
       throw new Error('unknown exercise type ' + type);
   }
 }
 
-// Returns { ok: boolean, reason?: string }. `elapsed` = seconds since the puzzle was served.
-export function validateExercise(type, solution, spec, answer, elapsed) {
+// Positional step check: is the player standing at step i (and held long enough)?
+export function validateStep(pend, i, player, now) {
+  const steps = pend.spec.steps;
+  if (!steps) return { ok: false, err: 'This exercise has no steps.' };
+  if (i !== pend.stepIdx) return { ok: false, err: 'Wrong order!' };
+  const s = steps[i];
+  if (!s) return { ok: false, err: 'No such step.' };
+  if (Math.hypot(s.x - player.x, s.z - player.z) > 2.8) return { ok: false, err: 'Get closer!' };
+  if (s.hold && now - (pend.lastStepAt ?? pend.servedAt) < s.hold * 0.8) return { ok: false, err: 'Hold it longer!' };
+  if (pend.spec.time && now - pend.servedAt > pend.spec.time + 3) return { ok: false, err: "Time's up!" };
+  pend.stepIdx++;
+  pend.lastStepAt = now;
+  return { ok: true, done: pend.stepIdx >= steps.length };
+}
+
+// Returns { ok, reason? }. elapsed = seconds since the exercise was served.
+export function validateExercise(type, solution, spec, answer, elapsed, pend = null) {
   if (!answer || typeof answer !== 'object') return { ok: false, reason: 'No answer.' };
   switch (type) {
-    case 'order': {
-      const counts = answer.counts || {};
-      const keys = Object.keys(counts).filter((k) => counts[k] > 0);
-      const want = Object.keys(solution);
-      if (keys.length !== want.length) return { ok: false, reason: 'The tray does not match the ticket.' };
-      for (const k of want) if (counts[k] !== solution[k]) return { ok: false, reason: 'Wrong amount of ' + k + '.' };
+    case 'pushups': {
+      const n = answer.count | 0;
+      if (n < solution) return { ok: false, reason: 'Not enough push-ups!' };
+      if (elapsed < solution * 0.09) return { ok: false, reason: 'Too fast to be real.' };
+      if (elapsed > spec.time + 3) return { ok: false, reason: 'Too slow!' };
       return { ok: true };
     }
-    case 'register': {
-      const presses = Array.isArray(answer.presses) ? answer.presses : [];
-      if (presses.length > 60 || presses.some((p) => !spec.keys.includes(p))) return { ok: false, reason: 'Invalid keys.' };
-      const sum = presses.reduce((s, p) => s + p, 0);
-      return sum === solution ? { ok: true } : { ok: false, reason: 'The drawer is off!' };
+    case 'sequence': {
+      const seq = Array.isArray(answer.sequence) ? answer.sequence : [];
+      if (elapsed < 1) return { ok: false, reason: 'Too fast to be real.' };
+      return seq.length === solution.length && seq.every((k, i) => k === solution[i]) ? { ok: true } : { ok: false, reason: 'Wrong key!' };
     }
-    case 'timing': {
+    case 'impossible':
+      // nobody can press that last key
+      return { ok: false, reason: 'WRONG!', impossible: true };
+    case 'fryer': {
       const hits = Array.isArray(answer.hits) ? answer.hits : [];
       if (hits.length !== 3) return { ok: false, reason: 'Burnt!' };
       if (elapsed < 1.2) return { ok: false, reason: 'Too fast to be real.' };
@@ -141,40 +125,23 @@ export function validateExercise(type, solution, spec, answer, elapsed) {
       }
       return { ok: true };
     }
-    case 'ingredients': {
-      const sel = Array.isArray(answer.selected) ? answer.selected.slice().sort() : [];
-      return sel.length === solution.length && sel.every((s, i) => s === solution[i]) ? { ok: true } : { ok: false, reason: 'That is not the recipe!' };
+    case 'cones': case 'order': case 'mop': case 'boxes': {
+      if (!pend || pend.stepIdx < spec.steps.length) return { ok: false, reason: answer.timeout ? "Time's up!" : 'Not finished!' };
+      if (elapsed > spec.time + 3) return { ok: false, reason: "Time's up!" };
+      return { ok: true };
     }
-    case 'prep': {
-      const seq = Array.isArray(answer.sequence) ? answer.sequence : [];
-      if (elapsed < (solution.length * spec.flashMs) / 1000) return { ok: false, reason: 'Too fast to be real.' };
-      return seq.length === solution.length && seq.every((s, i) => s === solution[i]) ? { ok: true } : { ok: false, reason: 'Wrong order!' };
-    }
-    case 'quiz': {
-      const a = Array.isArray(answer.answers) ? answer.answers : [];
-      return a.length === solution.length && a.every((x, i) => x === solution[i]) ? { ok: true } : { ok: false, reason: 'Wrong answer!' };
-    }
-    case 'qc':
-      return answer.line === solution ? { ok: true } : { ok: false, reason: 'You approved a bad order!' };
     default:
       return { ok: false, reason: 'Unknown exercise.' };
   }
 }
 
-// Reference solver used by tests to prove every generated puzzle is solvable.
+// Reference solver used by tests: returns { steps: [positions to stand at], answer }.
 export function solveExercise(type, spec, solution) {
   switch (type) {
-    case 'order': return { counts: { ...solution } };
-    case 'register': {
-      const presses = []; let left = solution;
-      for (const k of spec.keys) while (left >= k) { presses.push(k); left -= k; }
-      return { presses };
-    }
-    case 'timing': return { hits: solution.map((z) => z.start + z.width / 2) };
-    case 'ingredients': return { selected: spec.need.slice() };
-    case 'prep': return { sequence: solution.slice() };
-    case 'quiz': return { answers: solution.slice() };
-    case 'qc': return { line: solution };
+    case 'pushups': return { answer: { count: solution } };
+    case 'sequence': return { answer: { sequence: solution.slice() } };
+    case 'impossible': return { answer: { sequence: solution.slice() } };
+    case 'fryer': return { answer: { hits: solution.map((z) => z.start + z.width / 2) } };
+    default: return { steps: spec.steps, answer: { done: true } };
   }
-  return null;
 }
