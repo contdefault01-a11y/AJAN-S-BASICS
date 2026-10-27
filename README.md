@@ -64,7 +64,7 @@ ignores you until the chase has started; after that they are active and a bit fa
   until supplied); with nothing to give he gets bored and leaves.
 * **Gotta Sweep** – bursts out of his closet with a school-wide `sweepout.wav`, rushes at anyone he
   sees (`sweep.wav`), very fast, and sometimes grabs you and drags you back to his closet.
-* **1st Prize** – huge: he fills about 90% of the hallway, so slip past on the sides. Once he spots
+* **1st Prize** – big: he fills most of the hallway, so slip past on the sides. Once he spots
   you he turns and charges fast and shoves hard. Scissors cut his wires.
 * **Arts and Crafters** (the sock) – every now and then his `childmusic.wav` plays for the whole
   school; after your 7th exercise, staring at him makes him charge and teleport you.
