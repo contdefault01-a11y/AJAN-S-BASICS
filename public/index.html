@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AJAN'S BASICS IN FAST FOOD AND TRAINING</title>
+  <link rel="icon" href="/assets/FACE1.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+  </script>
+  <script src="/socket.io/socket.io.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="view"></canvas>
+
+    <!-- ===================== HUD ===================== -->
+    <div id="hud" class="hidden">
+      <div id="hud-tl">
+        <div id="hud-ex">0/7 Exercises</div>
+        <div id="hud-cash" class="hidden">CASH: $0.00</div>
+        <div id="hud-cal" class="hidden">CALORIES: 0 / 7,000</div>
+      </div>
+      <div id="hud-obj"></div>
+      <div id="hud-tr">
+        <div id="inv"></div>
+        <div id="inv-name">Nothing</div>
+      </div>
+      <div id="stamina"><div class="st-label">STAMINOMETER</div><div class="st-bar"><div class="st-fill"></div><div class="st-mark"></div></div></div>
+      <div id="crosshair"></div>
+      <div id="prompt"></div>
+      <div id="detention" class="hidden"></div>
+      <div id="mp-status" class="hidden"></div>
+      <div id="toasts"></div>
+      <img id="face" alt="">
+      <div id="debug" class="hidden"></div>
+      <div id="netwarn" class="hidden">Connection lost - reconnecting...</div>
+    </div>
+
+    <!-- ===================== in-game overlays ===================== -->
+    <div id="exercise" class="overlay hidden"><div class="paper" id="exercise-panel"></div></div>
+    <div id="shop" class="overlay hidden"><div class="paper" id="shop-panel"></div></div>
+    <div id="jump" class="hidden">
+      <canvas id="jump-canvas" width="320" height="200"></canvas>
+      <div id="jump-text">Jump rope with Playtime!</div>
+      <div id="jump-count">0 / 5</div>
+      <div id="jump-help">Press SPACE (or click) when the rope hits the floor. Scissors (right-click) cut the rope.</div>
+    </div>
+    <div id="scare" class="hidden"><img src="/assets/AJANBAD.png" alt=""></div>
+    <div id="clicklock" class="overlay hidden"><div class="paper small"><h2>Click to play</h2><p>Your mouse controls the camera.</p></div></div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="paper small">
+        <h2>PAUSED</h2>
+        <p id="pause-note"></p>
+        <button class="mbtn" id="btn-resume">RESUME</button>
+        <button class="mbtn" id="btn-pause-options">OPTIONS</button>
+        <button class="mbtn" id="btn-quit">QUIT TO MENU</button>
+      </div>
+    </div>
+
+    <div id="end" class="overlay hidden">
+      <div class="paper small">
+        <h2 id="end-title"></h2>
+        <p id="end-text"></p>
+        <button class="mbtn" id="btn-again">TRY AGAIN</button>
+        <button class="mbtn" id="btn-end-menu">MAIN MENU</button>
+      </div>
+    </div>
+
+    <!-- ===================== menus ===================== -->
+    <div id="splash" class="screen">
+      <div class="splash-box">
+        <h1>AJAN'S BASICS</h1>
+        <p>IN FAST FOOD AND TRAINING</p>
+        <p class="warn">This game is a parody horror-comedy with jumpscares and loud sounds.</p>
+        <button class="mbtn" id="btn-splash">CLICK TO START</button>
+        <div id="load-bar"><div></div></div>
+        <div id="load-text"></div>
+      </div>
+    </div>
+
+    <div id="menu" class="screen hidden">
+      <div id="menu-art">
+        <img src="/assets/MENU.png" alt="AJAN's Basics in Fast Food and Training">
+        <div id="menu-cover"></div>
+        <nav id="menu-buttons">
+          <button class="menu-item" data-act="play">PLAY</button>
+          <button class="menu-item" data-act="mp">MULTIPLAYER</button>
+          <button class="menu-item" data-act="howto">HOW TO PLAY</button>
+          <button class="menu-item" data-act="options">OPTIONS</button>
+          <button class="menu-item" data-act="about">ABOUT</button>
+        </nav>
+      </div>
+    </div>
+
+    <div id="sub-mp" class="screen sub hidden">
+      <div class="paper">
+        <h2>MULTIPLAYER</h2>
+        <label>Your name <input id="mp-name" maxlength="16" placeholder="Trainee"></label>
+        <div class="mp-row">
+          <button class="mbtn" id="btn-host">HOST NEW GAME</button>
+        </div>
+        <div class="mp-row">
+          <input id="mp-code" maxlength="4" placeholder="CODE" style="text-transform:uppercase">
+          <button class="mbtn" id="btn-join">JOIN</button>
+        </div>
+        <h3>Open games <button class="mbtn tiny" id="btn-refresh">REFRESH</button></h3>
+        <div id="mp-list" class="dim">-</div>
+        <p id="mp-msg" class="err"></p>
+        <button class="mbtn back">BACK</button>
+      </div>
+    </div>
+
+    <div id="sub-howto" class="screen sub hidden">
+      <div class="paper scroll">
+        <h2>HOW TO PLAY</h2>
+        <p><b>AJAN</b> wants you trained and well fed. First, find and finish the <b>7 training exercises</b> hidden in the Exercise Rooms around the school:
+          Order Assembly, Cash Register, Kitchen Timing, Ingredient Selection, Food Preparation, the Training Quiz and Quality Control.</p>
+        <p>After all 7, <b>cash</b> ($1-$4 bills) appears on desks, tables and in hallways. Collect it, then walk to the <b>Food Court</b> north of the cafeteria.
+          Buy food at the <b>KFC</b> or <b>Popeyes</b> counter until you reach <b>7,000 calories</b>.</p>
+        <p>Then AJAN loses it. Everything turns red. <b>Run to an EXIT</b> in a corner of the school!</p>
+        <p>Careful: once you finish your first exercise AJAN starts hunting you. Listen for his <b>STOMPS</b> - they get faster as you progress. Opening doors makes noise.</p>
+        <h3>Characters</h3>
+        <ul>
+          <li><b>Principal</b> - no running in the halls, no students in the Faculty room. Breaking a rule in front of him = detention.</li>
+          <li><b>Playtime</b> - makes you jump rope 5 times. Press SPACE when the rope hits the floor. Scissors cut the rope.</li>
+          <li><b>Bully</b> - blocks a hallway and takes one of your items.</li>
+          <li><b>Gotta Sweep</b> - sweeps everyone down the halls.</li>
+          <li><b>1st Prize</b> - turns slowly, then charges and shoves you. Scissors cut his wires.</li>
+          <li><b>Arts and Crafters</b> - shy... until you finish all 7 exercises. Don't stare at him.</li>
+        </ul>
+        <h3>Controls</h3>
+        <p>WASD move · Mouse look · SHIFT run · LEFT CLICK interact · RIGHT CLICK use item · 1-3 / wheel select item · ESC pause</p>
+        <h3>Items</h3>
+        <p>Safety Scissors, Shiny Quarter (vending machines), AJAN Cola (push characters), Principal's Keys (escape detention),
+          Protein Bar (stamina), Swinging Door Lock, Quiet Sneakers, Alarm Clock (distraction), Energy Drink (unlimited sprint).</p>
+        <button class="mbtn back">BACK</button>
+      </div>
+    </div>
+
+    <div id="sub-options" class="screen sub hidden">
+      <div class="paper small">
+        <h2>OPTIONS</h2>
+        <label>Master volume <input type="range" id="opt-master" min="0" max="1" step="0.05"></label>
+        <label>Music volume <input type="range" id="opt-music" min="0" max="1" step="0.05"></label>
+        <label>Effects &amp; voices <input type="range" id="opt-sfx" min="0" max="1" step="0.05"></label>
+        <label>Mouse sensitivity <input type="range" id="opt-sens" min="0.2" max="3" step="0.1"></label>
+        <label>Field of view <input type="range" id="opt-fov" min="50" max="90" step="1"></label>
+        <label class="chk"><input type="checkbox" id="opt-lowres"> Low resolution (faster, crunchier)</label>
+        <label class="chk"><input type="checkbox" id="opt-shake" checked> Camera shake</label>
+        <button class="mbtn back">BACK</button>
+      </div>
+    </div>
+
+    <div id="sub-about" class="screen sub hidden">
+      <div class="paper small">
+        <h2>ABOUT</h2>
+        <p>AJAN'S BASICS IN FAST FOOD AND TRAINING</p>
+        <p>A fan parody of the Classic-style "educational horror" games, starring AJAN.</p>
+        <p>© 2026 MAX · Character art, voice lines and menu art supplied by the project.</p>
+        <p class="dim">Built with three.js and Socket.IO.</p>
+        <button class="mbtn back">BACK</button>
+      </div>
+    </div>
+
+    <div id="loading" class="screen hidden"><div class="splash-box"><h2>LOADING...</h2><p id="loading-msg"></p><button class="mbtn hidden" id="btn-loading-back">BACK</button></div></div>
+  </div>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
