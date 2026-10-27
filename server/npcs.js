@@ -227,6 +227,7 @@ export class Ajan extends Npc {
         if (d < nd) { nd = d; near = p; }
         if (this.mood === 'coin' && d < 3.6 && !p.gotAjanCoin && p.exercisesDone.size >= 1) {
           p.gotAjanCoin = true;
+          room.coinGiven = true;
           p.dirty = true;
           room.giveItem(p, 'coin', 'AJAN: "Here is your coin! Now do the next exercise!"');
           room.sfx('pickup', null, p.id);
@@ -317,12 +318,12 @@ export class Principal extends Npc {
   update(dt) {
     const room = this.room, t = room.t;
     // every now and then the Principal blows his whistle - loud enough for the whole school
-    if (!this.nextWhistle) this.nextWhistle = t + 25 + room.rng() * 30;
-    if (t >= this.nextWhistle) { this.nextWhistle = t + 35 + room.rng() * 45; room.sfx('whistle', this, '*'); }
+    if (!this.nextWhistle) this.nextWhistle = t + 42 + room.rng() * 50;
+    if (t >= this.nextWhistle) { this.nextWhistle = t + 58 + room.rng() * 75; room.sfx('whistle', this, '*'); }
     if (this.applyPush(dt)) return;
     if (t >= this.thinkAt) {
       this.thinkAt = t + 0.15;
-      if (this.state !== 'chase') {
+      if (this.state !== 'chase' && this.state !== 'fetch') {
         for (const p of room.players.values()) {
           if (!room.canInteract(p) || p.detention) continue;
           if (!this.canSee(p, 38)) continue;
@@ -341,13 +342,13 @@ export class Principal extends Npc {
       }
     }
 
-    if (this.state === 'chase') {
+    if (this.state === 'chase' || this.state === 'fetch') {
       const p = room.players.get(this.target);
       if (!p || !room.canInteract(p) || p.detention || t > this.chaseUntil) { this.state = 'wander'; this.target = null; return; }
-      if (this.canSee(p, 80)) this.lostAt = t;
+      if (this.canSee(p, 80) || this.state === 'fetch') this.lostAt = t;
       if (t - this.lostAt > 7) { this.state = 'wander'; this.target = null; return; }
       this.setGoal(p.x, p.z);
-      this.followPath(13.5 * dt);
+      this.followPath((this.state === 'fetch' ? 19 : 13.5) * dt);
       if (dist(this, p) < 2.0) {
         room.startDetention(p, this);
         this.state = 'wander';
@@ -541,7 +542,8 @@ export class Bully extends Npc {
 
   snapshot() {
     const s = super.snapshot();
-    if (this.box && this.room.chase && !this.hidden) s.b = [this.box.x0, this.box.x1, this.box.z0, this.box.z1].map((v) => +v.toFixed(2));
+    // collide only with his visible body - a hallway-wide box felt like an invisible wall
+    if (this.room.chase && !this.hidden) s.b = [this.x - 0.6, this.x + 0.6, this.z - 0.6, this.z + 0.6].map((v) => +v.toFixed(2));
     return s;
   }
 }
@@ -813,8 +815,8 @@ export class Arts extends Npc {
     const hunters = all.filter((p) => p.exercisesDone.size >= 7);
     const active = hunters.length > 0;
     // the sock sometimes plays his creepy children's song for the whole school
-    if (!this.nextSong) this.nextSong = t + 45 + room.rng() * 40;
-    if (t >= this.nextSong) { this.nextSong = t + 60 + room.rng() * 60; room.sfx('childmusic', this, '*'); }
+    if (!this.nextSong) this.nextSong = t + 75 + room.rng() * 67;
+    if (t >= this.nextSong) { this.nextSong = t + 100 + room.rng() * 100; room.sfx('childmusic', this, '*'); }
 
     if (this.state === 'hidden') {
       this.hidden = true;
@@ -883,3 +885,64 @@ export class Arts extends Npc {
   }
 }
 
+
+// ------------------------------------------------------------------------------------------
+// Catboy: roams slowly and mumbles (more often when you are close). After the chase starts he
+// may greet you; click him for a 50/50: a free item, or he sells you out to AJAN / the Principal.
+export class Catboy extends Npc {
+  constructor(room) {
+    super(room, 'catboy', ...SPAWNS.catboy, 0.8);
+    this.state = 'roam';
+    this.nextMumbleCheck = 0;
+    this.mumbleOk = 8;
+    this.target = null;
+    this.wantUntil = 0;
+    this.cooldownUntil = 0;
+    this.thinkAt = 0;
+  }
+
+  update(dt) {
+    const room = this.room, t = room.t;
+    if (this.applyPush(dt)) return;
+    // random "pass" lines; the closer a player is, the likelier he talks
+    if (t >= this.nextMumbleCheck) {
+      this.nextMumbleCheck = t + 1;
+      let nd = 1e9;
+      for (const p of room.players.values()) if (room.isActive(p)) nd = Math.min(nd, dist(this, p));
+      const chance = 0.006 + 0.07 * Math.max(0, 1 - nd / 35);
+      if (t >= this.mumbleOk && room.rng() < chance) {
+        this.mumbleOk = t + 7;
+        room.sfx(room.rng() < 0.5 ? 'catboypass' : 'catboypass2', this, '');
+      }
+    }
+    // the first time he sees you (after the chase began): 70% chance he wants to talk
+    if (t >= this.thinkAt && this.state === 'roam') {
+      this.thinkAt = t + 0.4;
+      for (const p of room.players.values()) {
+        if (!room.canInteract(p) || p.cd.catSeen) continue;
+        if (!this.canSee(p, 25)) continue;
+        p.cd.catSeen = true;
+        if (room.rng() < 0.7) {
+          room.sfx('catboysee', this, p.id);
+          this.state = 'want';
+          this.target = p.id;
+          this.wantUntil = t + 12;
+        }
+        break;
+      }
+    }
+    if (this.state === 'want') {
+      const p = room.players.get(this.target);
+      if (!p || !room.canInteract(p) || t > this.wantUntil) { this.state = 'roam'; this.target = null; return; }
+      if (dist(this, p) > 3) { this.setGoal(p.x, p.z); this.followPath(4 * dt); }
+      else this.yaw = yawTo(p.x - this.x, p.z - this.z);
+      return;
+    }
+    if (this.atGoal(1.5) || !this.goal) {
+      const g = this.randomHallGoal(12);
+      this.setGoal(g.x, g.z, true);
+    }
+    this.followPath(2.5 * dt); // slow stroll
+    if (this.checkStuck(dt, true)) this.goal = null;
+  }
+}

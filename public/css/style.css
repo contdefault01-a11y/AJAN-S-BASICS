@@ -104,7 +104,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #jump-count { font-size: 34px; font-weight: bold; }
 #jump-help { font-size: 14px; max-width: 360px; }
 /* jumpscare: the frozen game stays visible in the top half, the picture fills the bottom half */
-#scare { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; z-index: 40; display: flex; justify-content: center; align-items: flex-end; pointer-events: none; overflow: hidden; }
+#scare { position: absolute; left: 0; right: 0; bottom: 0; height: 90%; z-index: 40; display: flex; justify-content: center; align-items: flex-end; pointer-events: none; overflow: hidden; }
 #scare img { height: 100%; max-width: 100%; object-fit: contain; image-rendering: pixelated; animation: scare-glitch 0.09s steps(2) infinite; }
 @keyframes scare-glitch {
   0% { transform: translate(-6px, 3px) scale(1.04); filter: contrast(1.6) saturate(2); }

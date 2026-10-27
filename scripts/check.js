@@ -20,7 +20,7 @@ for (const d of ['server', 'shared', 'public/js', 'scripts', 'test']) walk(path.
 for (const f of files) execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' });
 console.log(`syntax ok: ${files.length} files`);
 
-const IMAGES = ['AJAN', 'AJANBAD', 'PRINCIPAL', 'PLAYTIME', 'BULLY', 'SWEEP', 'PRIZE', 'ARTS', 'FACE1', 'FACE2', 'FACE3', 'MENU'];
+const IMAGES = ['AJAN', 'AJANBAD', 'PRINCIPAL', 'PLAYTIME', 'BULLY', 'SWEEP', 'PRIZE', 'ARTS', 'FACE1', 'FACE2', 'FACE3', 'MENU', 'CATBOY'];
 const OPTIONAL = new Set(['BULLYSEE.mp3', 'BULLYTAKE.mp3', 'BULLYPASS.mp3']);
 let missing = 0;
 for (const f of [...IMAGES.map((i) => i + '.png'), ...Object.values(AUDIO)]) {

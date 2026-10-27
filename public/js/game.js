@@ -15,10 +15,10 @@ import { spriteTex, labelTex, iconTex, iconDataURL, sprayTex, drawTimer } from '
 import { ExerciseRunner } from './exercise.js';
 
 const $ = (id) => document.getElementById(id);
-const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize', 'sweep', 'sweepout', 'whistle', 'childmusic']);
+const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize', 'sweep', 'sweepout', 'whistle', 'childmusic', 'catboypass', 'catboypass2', 'catboysee', 'catboygood', 'catboyajan', 'catboyprincipal']);
 const NPC_LOOK = {
   ajan: { img: 'AJAN', h: 5.6 }, principal: { img: 'PRINCIPAL', h: 5.0 }, playtime: { img: 'PLAYTIME', h: 4.1 },
-  bully: { img: 'BULLY', h: 4.7 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 3.7 }, arts: { img: 'ARTS', h: 4.3 },
+  bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 3.7 }, arts: { img: 'ARTS', h: 4.3 },
 };
 const FACES = ['FACE1', 'FACE2', 'FACE3'];
 const ACTIVE = new Set([PHASE.INTRO, PHASE.TRAINING, PHASE.COLLECT_CASH, PHASE.FAST_FOOD, PHASE.FINAL_ESCAPE]);
@@ -359,7 +359,7 @@ export class Game {
     }
     // spatial: follow the NPC that is speaking if we know it
     const npc = ev.src && this.npcs.get(ev.src);
-    const opts = { range: voice ? 75 : k === 'alarm' ? 120 : 55, dedupe, bus: voice ? 'voice' : 'sfx' };
+    const opts = { range: k.startsWith('catboy') ? 60 : voice ? 75 : k === 'alarm' ? 120 : 55, dedupe, bus: voice ? 'voice' : 'sfx', volume: k.startsWith('catboy') ? 1.3 : 1 };
     if (npc) opts.getPos = () => ({ x: npc.x, z: npc.z });
     else opts.pos = { x: ev.x, z: ev.z };
     audio.play(k, opts);
@@ -468,6 +468,8 @@ export class Game {
     }
     for (const c of this.map.counters) consider(c.x, c.z - 1.8, 6.5, 'counter', c, 0.55);
     for (const v of this.map.vending) consider(v.wx, v.wz, 4.0, 'vending', v, 0.7);
+    const cat = this.npcs.get('catboy');
+    if (cat && !cat.hidden) consider(cat.x, cat.z, 4.5, 'catboy', { x: cat.x, z: cat.z }, 0.75);
     cands.sort((a, b) => a.score - b.score);
     for (const c of cands) {
       const tx = c.data.wx ?? c.data.x;
@@ -501,6 +503,9 @@ export class Game {
       this.openExercise(t.data.id);
     } else if (t.kind === 'counter') {
       this.openShop(t.data.restaurant);
+    } else if (t.kind === 'catboy') {
+      const res = await net.act('catboy');
+      if (!res.ok && res.err) this.toast(res.err);
     } else if (t.kind === 'vending') {
       this.toast('Use a Shiny Quarter (right-click) on this machine.');
     }
@@ -978,6 +983,7 @@ function promptFor(t, self) {
     case 'pickup': return t.data.kind === 'cash' ? 'Click: take ' + fmtCash(t.data.value) : 'Click: pick up ' + ITEMS[t.data.item].name;
     case 'station': return 'Click: start the exercise';
     case 'counter': return 'Click: order at ' + RESTAURANTS[t.data.restaurant].name;
+    case 'catboy': return 'Click: talk to the catboy';
     case 'vending': return self.inv[self.sel] === 'coin' ? 'Right-click: insert the quarter' : 'Vending machine (needs a Shiny Quarter)';
   }
   return '';

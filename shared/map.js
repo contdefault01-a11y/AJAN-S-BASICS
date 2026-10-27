@@ -107,6 +107,7 @@ export const SPAWNS = {
   sweep: [36, 24],
   prize: [80, 34],
   arts: [4, 40],
+  catboy: [65, 50],
 };
 
 // Spots where the Bully can stand: 3-wide hallway segments (he blocks the full width).

@@ -209,9 +209,9 @@ test('detention: principal2, office teleport, locked door, countdown, keys', () 
   assert.ok(p.detention, 'still detained after 10s');
   run(room, 11);
   assert.equal(p.detention, null, 'released after 20s');
-  // second detention is longer, keys get you out
+  // a second detention is still 20 s; keys get you out
   room.startDetention(p, room.npcById.principal);
-  assert.equal(p.detention.dur, 25);
+  assert.equal(p.detention.dur, 20, 'detention is always 20 seconds');
   p.inventory[0] = 'keys';
   const od = room.map.doors[room.officeDoor];
   place(room, p, od.x, od.z - 1.5); // inside the office, next to its door
@@ -433,4 +433,46 @@ test("the principal's whistle and the sock's song play for everyone every now an
   for (let i = 0; i < 20 * 150; i++) { room.tick(0.05); for (const o of room.outbox) if (o.ev.e === 'sfx' && o.ev.to === '*') keys.add(o.ev.k); room.outbox = []; }
   assert.ok(keys.has('whistle'));
   assert.ok(keys.has('childmusic'));
+});
+
+test('catboy: 50/50 good item or betrayal; betrayals ambush you from around the corner', () => {
+  const outcomes = new Set();
+  for (let seed = 1; seed <= 40 && outcomes.size < 3; seed++) {
+    const { room, p } = mk(seed);
+    room.startChase(p);
+    const cb = room.npcById.catboy;
+    place(room, p, cb.x + 2, cb.z);
+    const before = room.pickups.size;
+    const r = room.handleAction(p, { type: 'catboy' });
+    assert.ok(r.ok, JSON.stringify(r));
+    outcomes.add(r.outcome);
+    assert.equal(room.handleAction(p, { type: 'catboy' }).ok, false, 'cooldown');
+    if (r.outcome === 'good') {
+      assert.equal(room.pickups.size, before + 1);
+      assert.ok(room.outbox.some((o) => o.ev.k === 'catboygood'));
+    } else {
+      const npc = r.outcome === 'ajan' ? room.ajan : room.npcById.principal;
+      assert.ok(room.outbox.some((o) => o.ev.k === (r.outcome === 'ajan' ? 'catboyajan' : 'catboyprincipal')));
+      run(room, 6);
+      const d = Math.hypot(npc.x - p.x, npc.z - p.z);
+      assert.ok(d >= 10 && d <= 52, r.outcome + ' appears nearby but not on top of you: ' + d.toFixed(1));
+      const pc = worldToCell(p.x, p.z), nc = worldToCell(npc.x, npc.z);
+      assert.notEqual(room.map.room(nc.cx, nc.cz), room.map.room(pc.cx, pc.cz), 'not in the same hallway');
+      if (r.outcome === 'principal') assert.equal(npc.state, 'fetch');
+    }
+  }
+  assert.ok(outcomes.has('good') && outcomes.has('ajan') && outcomes.has('principal'), [...outcomes].join());
+});
+
+test('exercise progress is shared by all players, including late joiners', () => {
+  const { room, p } = mk(9);
+  const p2 = room.addPlayer('p2', 'Two');
+  p.phase = p2.phase = PHASE.TRAINING;
+  doExercise(room, p, 0);
+  assert.ok(p2.exercisesDone.has(0), 'the other player sees it done');
+  const late = room.addPlayer('p3', 'Late');
+  assert.ok(late.exercisesDone.has(0), 'a late joiner gets the shared progress');
+  for (let i = 0; i < 7; i++) room.sharedEx.add(i);
+  run(room, 4);
+  for (const q of [p, p2, late]) assert.equal(q.phase, PHASE.COLLECT_CASH);
 });

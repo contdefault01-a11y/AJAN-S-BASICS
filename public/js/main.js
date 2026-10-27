@@ -9,7 +9,7 @@ import { PostFX } from './postfx.js';
 import { Game, escapeHtml } from './game.js';
 
 const $ = (id) => document.getElementById(id);
-const IMAGES = ['AJAN', 'AJANBAD', 'PRINCIPAL', 'PLAYTIME', 'BULLY', 'SWEEP', 'PRIZE', 'ARTS', 'FACE1', 'FACE2', 'FACE3'];
+const IMAGES = ['AJAN', 'AJANBAD', 'PRINCIPAL', 'PLAYTIME', 'BULLY', 'SWEEP', 'PRIZE', 'ARTS', 'CATBOY', 'FACE1', 'FACE2', 'FACE3'];
 // supplied item / prop pictures in /assets/random (webp)
 const EXTRA_IMAGES = ['Male1', 'flowerpot']; // .webp in /assets
 const RANDOM_IMAGES = ['SafetyScissorsIcon_Large', 'QuarterIcon_Large', 'BSODA', 'KeyIcon_Large', 'ZestyBarIcon_Large', 'SwingingDoorLockIcon_Large', 'BBTimesAsset_bigicon_BSED', 'Food', 'Notebooks', 'Papers', 'Pencils', 'Globe', 'ExitSignSprite', 'Bus'];

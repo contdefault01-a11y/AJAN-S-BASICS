@@ -136,6 +136,12 @@ export const AUDIO = Object.freeze({
   jump1: 'jump1.wav',
   jump2: 'jump2.wav',
   jump3: 'jump3.wav',
+  catboypass: 'CATBOYPASS.mp3',
+  catboypass2: 'CATBOYPASS2.mp3',
+  catboysee: 'CATBOYSEE.mp3',
+  catboygood: 'CATBOYGOOD.mp3',
+  catboyajan: 'CATBOYAJAN.mp3',
+  catboyprincipal: 'CATBOYPRINCIPAL.mp3',
   // music (looping, quieter than voices)
   menu: 'musicmenu.wav',
   music1: 'music1.wav',
