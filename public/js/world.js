@@ -381,7 +381,18 @@ export function buildWorld(map) {
     pivot.userData = { kind: 'door', id: d.id, closedRot, openRot, t: 0 };
     panel.userData = { kind: 'door', id: d.id };
     root.add(pivot);
-    doorMeshes.push({ pivot, panel, def: d, mat, kind, label });
+    const lockMat = new THREE.MeshBasicMaterial({ map: iconTex('lock'), alphaTest: 0.5, side: THREE.DoubleSide });
+    // a big padlock picture in front of both faces of the door while it is locked
+    const lockSign = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 2.3), lockMat);
+      if (d.axis === 'z') m.position.set(d.x, 2.6, d.z + side * 0.2);
+      else { m.position.set(d.x + side * 0.2, 2.6, d.z); m.rotation.y = Math.PI / 2; }
+      lockSign.add(m);
+    }
+    lockSign.visible = false;
+    root.add(lockSign);
+    doorMeshes.push({ pivot, panel, def: d, mat, kind, label, lockSign });
   }
 
   // ---------------------------------------------------------------- decals
@@ -437,6 +448,7 @@ export function buildWorld(map) {
       const m = stationMeshes.find((s) => s.userData.id === id);
       if (m) { m.userData.screen.material.map = stationTex(type, done, id + 1); m.userData.screen.material.needsUpdate = true; }
     },
+    showLocks(isLocked) { for (const dm of doorMeshes) dm.lockSign.visible = isLocked(dm.def.id); },
     animateDoors(dt, doorOpen) {
       for (const dm of doorMeshes) {
         const u = dm.pivot.userData;

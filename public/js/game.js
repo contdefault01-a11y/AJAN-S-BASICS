@@ -888,6 +888,7 @@ export class Game {
     for (const fs of this.app.foodSprites) face(fs);
 
     // ---- doors
+    this.world.showLocks((id) => this.doorState[id].locked);
     this.world.animateDoors(dt, (id) => this.doorState[id].open || (this.predictOpen.get(id) || 0) > this.time);
 
     // ---- HUD bits

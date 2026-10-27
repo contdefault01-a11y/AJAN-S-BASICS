@@ -632,7 +632,7 @@ export class Room {
         consume();
         ds.open = false;
         ds.locked = true;
-        ds.lockedUntil = t + 15;
+        ds.lockedUntil = t + 20;
         for (const n of this.npcs) n.path = null;
         this.event({ e: 'sfx', k: 'lock', x: c.x, z: c.z, to: '' });
         return { ok: true };

@@ -120,6 +120,8 @@ export const VENDING = [
   { id: 'vend_soda', kind: 'soda', x: 31, z: 38, face: 'e' },
   { id: 'vend_bar', kind: 'bar', x: 92, z: 60, face: 'w' },
   { id: 'vend_soda2', kind: 'soda', x: 3, z: 64, face: 'e' },
+  { id: 'vend_cafe_soda', kind: 'soda', x: 30, z: 20, face: 'w' },
+  { id: 'vend_cafe_bar', kind: 'bar', x: 30, z: 22, face: 'w' },
 ];
 
 const SIDE = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
