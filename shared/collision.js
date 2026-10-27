@@ -61,6 +61,14 @@ export function resolveCircle(map, pos, r, isSolid, extraBoxes, useProps = true)
   let hit = false;
   for (let iter = 0; iter < 3; iter++) {
     let any = false;
+    // moving bodies (Bully, 1st Prize) first; walls are resolved after them so walls always win,
+    // and a push out of a body that would cross a wall is cancelled
+    if (extraBoxes)
+      for (const b of extraBoxes) {
+        const bx = pos.x, bz = pos.z;
+        if (!pushOutOfBox(pos, r, b.x0, b.x1, b.z0, b.z1)) continue;
+        if (segmentBlocked(map, bx, bz, pos.x, pos.z, isSolid)) { pos.x = bx; pos.z = bz; } else any = true;
+      }
     const cx0 = Math.floor((pos.x - r) / CELL) - 1, cx1 = Math.floor((pos.x + r) / CELL) + 1;
     const cz0 = Math.floor((pos.z - r) / CELL) - 1, cz1 = Math.floor((pos.z + r) / CELL) + 1;
     const seen = new Set();
@@ -83,8 +91,6 @@ export function resolveCircle(map, pos, r, isSolid, extraBoxes, useProps = true)
             }
         }
       }
-    if (extraBoxes)
-      for (const b of extraBoxes) if (pushOutOfBox(pos, r, b.x0, b.x1, b.z0, b.z1)) any = true;
     if (!any) break;
     hit = true;
   }

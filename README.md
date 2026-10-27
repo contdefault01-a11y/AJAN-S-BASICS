@@ -88,7 +88,7 @@ In multiplayer, exercise progress, cash and calories are shared by every player 
 
 ### Items
 
-Safety Scissors, Shiny Quarter (vending machines), BSODA / AJAN Cola (pushes any character far away),
+Safety Scissors, Shiny Quarter (vending machines), BSODA / AJAN Cola (a hallway-wide fizzy blast that pushes any character far away),
 Principal's Keys, Zesty Protein Bar (stamina), Swinging Door Lock, Quiet Sneakers, Alarm Clock,
 BSED energy drink (unlimited sprint). Only a few items lie in hallways; most are in rooms.
 

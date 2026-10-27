@@ -517,9 +517,16 @@ export function shadowTex() {
 }
 
 export function sprayTex() {
-  return cached('spray', () => toTex(canvas(32, 32, (g) => {
-    g.fillStyle = 'rgba(180,60,30,0.85)';
-    for (let i = 0; i < 40; i++) { const a = i * 2.4, r = (i % 7) * 2; g.fillRect(16 + Math.cos(a) * r, 16 + Math.sin(a) * r, 3, 3); }
-    g.fillStyle = 'rgba(255,255,255,0.9)'; for (let i = 0; i < 10; i++) g.fillRect(8 + i * 2, 10 + (i % 3) * 5, 2, 2);
+  // a big fizzy cola splash: brown blob with droplets and white foam bubbles
+  return cached('spray', () => toTex(canvas(64, 64, (g) => {
+    let seed = 7; const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    g.fillStyle = '#6b2a10';
+    for (let i = 0; i < 140; i++) { const a = r() * 6.283, d = Math.sqrt(r()) * 24; const s = 3 + r() * 6; g.fillRect(32 + Math.cos(a) * d - s / 2, 32 + Math.sin(a) * d - s / 2, s, s); }
+    g.fillStyle = '#a8441a';
+    for (let i = 0; i < 70; i++) { const a = r() * 6.283, d = Math.sqrt(r()) * 18; const s = 3 + r() * 5; g.fillRect(32 + Math.cos(a) * d - s / 2, 32 + Math.sin(a) * d - s / 2, s, s); }
+    g.fillStyle = '#7a3012';
+    for (let i = 0; i < 24; i++) { const a = r() * 6.283, d = 25 + r() * 6; g.fillRect(32 + Math.cos(a) * d, 32 + Math.sin(a) * d, 2, 2); }
+    g.fillStyle = '#fff6e8';
+    for (let i = 0; i < 30; i++) { const a = r() * 6.283, d = Math.sqrt(r()) * 22; const s = 2 + (r() < 0.3 ? 2 : 0); g.fillRect(32 + Math.cos(a) * d, 32 + Math.sin(a) * d, s, s); }
   }), { repeat: false }));
 }

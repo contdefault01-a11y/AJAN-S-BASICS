@@ -48,6 +48,7 @@ export class Game {
     this.remotes = new Map();
     this.pickups = new Map();
     this.objs = new Map();
+    this.splashes = [];
     this.snaps = [];
     this.renderT = 0;
     this.latestT = 0;
@@ -274,14 +275,24 @@ export class Game {
       oseen.add(o.id);
       let e = this.objs.get(o.id);
       if (!e) {
-        const mesh = o.k === 'soda' ? makeBillboard(sprayTex(), 1, 1.6, 1.5) : makeBillboard(iconTex('clock'), 1, 1.0, 0);
+        const mesh = o.k === 'soda' ? makeBillboard(sprayTex(), 1, 5.5, 0.4) : makeBillboard(iconTex('clock'), 1, 1.0, 0);
         this.dyn.add(mesh);
         e = { mesh, x: o.x, z: o.z, k: o.k };
         this.objs.set(o.id, e);
       }
       e.tx = o.x; e.tz = o.z; e.ring = o.r;
     }
-    for (const [id, e] of this.objs) if (!oseen.has(id)) { this.dyn.remove(e.mesh); this.objs.delete(id); }
+    for (const [id, e] of this.objs) if (!oseen.has(id)) {
+      this.dyn.remove(e.mesh); this.objs.delete(id);
+      // the soda ends in a big fizzy splash
+      if (e.k === 'soda') {
+        const m = makeBillboard(sprayTex(), 1, 5.5, 0.4);
+        m.material = m.material.clone(); m.material.transparent = true; m.material.alphaTest = 0.05;
+        m.position.set(e.x, 0.4, e.z);
+        this.dyn.add(m);
+        this.splashes.push({ m, t: 0 });
+      }
+    }
   }
 
   addPickup(p) {
@@ -339,7 +350,10 @@ export class Game {
       case 'pk-': this.removePickup(ev.id); break;
       case 'jump_start': this.startJump(ev); break;
       case 'jump_end': this.endJump(ev.why); break;
-      case 'hush': for (const k of [...audio.playing.keys()]) if (k.startsWith('v:' + ev.src)) audio.stop(k); break;
+      case 'hush':
+        audio.voiceQueue = audio.voiceQueue.filter((q) => !String(q.dedupe).startsWith('v:' + ev.src));
+        for (const k of [...audio.playing.keys()]) if (k.startsWith('v:' + ev.src)) audio.stop(k);
+        break;
       case 'caught': this.caught(); break;
       case 'victory': this.victory(); break;
       case 'phase': break;
@@ -896,6 +910,15 @@ export class Game {
       face(o.mesh);
     }
     for (const fs of this.app.foodSprites) face(fs);
+    this.splashes = this.splashes.filter((s) => {
+      s.t += dt;
+      const k = s.t / 0.6;
+      s.m.scale.setScalar(1 + k * 0.8);
+      s.m.material.opacity = Math.max(0, 1 - k);
+      face(s.m);
+      if (k >= 1) { this.dyn.remove(s.m); s.m.material.dispose(); return false; }
+      return true;
+    });
 
     // ---- doors
     this.world.showLocks((id) => this.doorState[id].locked);
