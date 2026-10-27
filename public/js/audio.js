@@ -26,6 +26,7 @@ export class AudioManager {
     this.music = null;
     this.loops = new Map();
     this.norm = new Map();
+    this.voiceQueue = []; // at most 2 voices at once; the rest wait their turn
   }
 
   // Must be called from a user gesture (browser autoplay policy).
@@ -113,6 +114,11 @@ export class AudioManager {
     if (dedupe && this.playing.has(dedupe)) return this.playing.get(dedupe);
     const buf = this.buffers.get(key);
     if (!buf) return this.synth(key, opts);
+    const isVoice = opts.bus === 'voice' || (VOICES.has(key) && !opts.bus);
+    if (isVoice && !opts.loop && this.voiceCount() >= 2) {
+      if (!this.voiceQueue.some((q) => q.dedupe === dedupe) && this.voiceQueue.length < 4) this.voiceQueue.push({ key, opts, dedupe, at: this.ctx.currentTime });
+      return null;
+    }
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.loop = !!opts.loop;
@@ -137,12 +143,26 @@ export class AudioManager {
     const h = { src, gain, pan, opts, key };
     this.updateHandle(h);
     src.start(0, START_OFFSET[key] || 0);
-    if (dedupe) {
-      this.playing.set(dedupe, h);
-      src.onended = () => { if (this.playing.get(dedupe) === h) this.playing.delete(dedupe); };
-    }
+    if (dedupe) this.playing.set(dedupe, h);
+    src.onended = () => {
+      if (dedupe && this.playing.get(dedupe) === h) this.playing.delete(dedupe);
+      if (opts.bus === 'voice') this.drainVoices();
+    };
     h.duration = duration;
     return h;
+  }
+
+  voiceCount() {
+    let n = 0;
+    for (const h of this.playing.values()) if (h.opts.bus === 'voice' && !h.opts.loop) n++;
+    return n;
+  }
+
+  drainVoices() {
+    while (this.voiceQueue.length && this.voiceCount() < 2) {
+      const q = this.voiceQueue.shift();
+      if (this.ctx.currentTime - q.at < 8) this.play(q.key, { ...q.opts, dedupe: q.dedupe }); // stale lines are dropped
+    }
   }
 
   updateHandle(h) {
@@ -170,7 +190,7 @@ export class AudioManager {
     if (h) { try { h.src.stop(); } catch { /* already stopped */ } this.playing.delete(dedupe); }
   }
 
-  stopAll() { for (const k of [...this.playing.keys()]) this.stop(k); this.stopMusic(); }
+  stopAll() { this.voiceQueue = []; for (const k of [...this.playing.keys()]) this.stop(k); this.stopMusic(); }
 
   isPlaying(dedupe) { return this.playing.has(dedupe); }
 

@@ -848,7 +848,7 @@ export class Room {
         o.x = nx; o.z = nz;
         for (const n of this.npcs) {
           if (n.hidden || o.hit.has(n.id)) continue;
-          if (Math.hypot(n.x - o.x, n.z - o.z) < 1.9) {
+          if (Math.hypot(n.x - o.x, n.z - o.z) < 3.8) { // a hallway-wide blast
             o.hit.add(n.id);
             n.push = { vx: o.vx * 0.9, vz: o.vz * 0.9, until: t + 4.0 };
           }
