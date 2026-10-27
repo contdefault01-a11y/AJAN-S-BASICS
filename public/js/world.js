@@ -400,7 +400,14 @@ export function buildWorld(map) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(dc.w, dc.h), new THREE.MeshBasicMaterial({ map: tex, transparent: dc.type === 'exitsign' ? false : false }));
     m.position.set(dc.x + dc.nx * 0.03, dc.y, dc.z + dc.nz * 0.03);
     m.rotation.y = Math.atan2(dc.nx, dc.nz);
-    if (dc.hanging) { m.material.side = THREE.DoubleSide; m.material.alphaTest = 0.5; }
+    if (dc.hanging) {
+      // a sign hanging in the hall: readable from both directions (two back-to-back faces)
+      m.material.alphaTest = 0.5;
+      const back = m.clone();
+      back.rotation.y += Math.PI;
+      back.position.z -= dc.nz * 0.04; back.position.x -= dc.nx * 0.04;
+      root.add(back);
+    }
     else if (dc.type === 'exitsign') m.material.alphaTest = 0.5;
     root.add(m);
   }

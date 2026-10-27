@@ -23,68 +23,72 @@ pausable one-player rooms), so always open the game through the server URL.
 
 ## Controls
 
-WASD move · mouse look · **Shift** run (uses stamina) · **left click** (or E) interact with doors,
-exercises, pickups and restaurant counters · **right click** (or Q) use the selected item ·
+WASD move · mouse look · **Shift** run (uses stamina) · **left click / E** interact with doors,
+machines, pickups and restaurant counters · **right click / Q** use the selected item ·
 **1-3 / mouse wheel** select item · **Space** jump rope · **Esc** pause · **F3** debug overlay.
+During an exercise the keys it shows (E, G, letters, Space) belong to the exercise.
 
 ## How a run goes
 
-1. **INTRO** – AJAN greets you (`AJANSTART.mp3`) and stays happy.
-2. **TRAINING** – seven exercise rooms each hold a different station: Order Assembly, Cash Register,
-   Kitchen Timing, Ingredient Selection, Food Preparation, Training Quiz, Quality Control. Puzzles
-   are generated and validated on the server and re-randomized every match. After the first one
-   AJAN says you earned a coin (`AJANCOIN.mp3`), walks over to hand you a Shiny Quarter, then turns
-   angry (`AJANBAD.png`) and starts hunting. His stomp cadence speeds up with progress; stomps shake
-   the camera depending on distance. Wrong answers tell him where you are.
-3. **COLLECT_CASH** – $1–$4 bills appear on desks, tables, counters and hallway corners.
-4. **FAST_FOOD** – buy from the KFC / Popeyes menus (price + calories, money is checked server-side).
-   A full order costs about $20.
-5. **FINAL_ESCAPE** – at 7,000 calories `AJANMAD.mp3` plays, AJAN goes berserk, the screen turns into
-   a red, wavy hallucination and the four corner EXIT doors open. Reach one to win (**VICTORY**).
+1. **Welcome** – you spawn in the entrance hall (REF1-style: a straight corridor, a door on the
+   left and one on the right, AJAN ahead). Behind you the front doors lead to a small fenced
+   garden with the school bus – there is no way out. AJAN greets you (`AJANSTART.mp3`) while
+   `music1.wav` plays quietly.
+2. **Exercise 1** (left door): push-ups – alternate **E** and **G** 16 times.
+   AJAN says you earned a coin (`AJANCOIN.mp3`): walk up to him and he hands you a Shiny Quarter.
+3. **Exercise 2** (right door): reaction keys – press each key as it appears... the last one is a
+   key that does not exist. It still counts, but AJAN gets mad: `AJANMAD.mp3` + `musicwrong.wav`,
+   his shocked face (`FACE3.png`) in the corner, and he vanishes to the **cafeteria**. The chase
+   is on: no music, just his `STOMP.mp3` steps (louder and heavier the closer he is, muffled far
+   away, with camera shake). He hears doors being opened.
+4. **Exercises 3–7** (random order every match): cone sprint (run to each cone, E), order run
+   (grab 3 foods in order, bring them to the machine), kitchen timing (press E in the green zone),
+   clean-up (hold E on each spill), box carry (carry 3 boxes to the shelf). `music2.wav` replaces
+   any other music while an exercise runs. Leaving the room abandons it.
+5. **COLLECT_CASH / FAST_FOOD** – $1–$4 bills appear; buy 7,000 calories at KFC / Popeyes
+   (north of the cafeteria). A full order costs about $20.
+6. **FINAL_ESCAPE** – the screen turns red, `musicescape.wav` loops, AJAN goes berserk. Reach one
+   of the four corner EXITs (**VICTORY**).
 
-Getting caught (**CAUGHT**) ends your run only; in multiplayer the others keep playing and you can
-try again. **DETENTION**, the jump-rope game and pauses are overlays on top of the main phase.
+Everyone except AJAN (Principal, Playtime, Bully, Gotta Sweep, 1st Prize, Arts and Crafters)
+ignores you until the chase has started; after that they are active and a bit faster than before.
 
 ### Characters
 
-* **Principal** – wanders; seeing you run or enter the Faculty room plays `PRINCIPAL1.mp3` and he
-  chases you; catching you plays `PRINCIPAL2.mp3` and locks you in his office for 20 s (+5 s each
-  time, max 45 s). AJAN is told where you are. Principal's Keys open the door early.
-* **Playtime** – spots you (`PLAYTIME1.mp3`), then a 5-jump rope game (`PLAYTIME2.mp3`). Missing
-  resets the count. Scissors cut the rope.
-* **Bully** – blocks a hallway (`BULLYSEE`); takes one random item (`BULLYTAKE`) and leaves, or says
-  no (`BULLYPASS`) and gets bored after a few seconds. Never steals cash.
-* **Gotta Sweep** – waits in the janitor's closet, then sweeps the halls for ~20 s pushing players
-  and characters with collision-aware pushes.
-* **1st Prize** – turns slowly and awkwardly, charges and shoves you (`PRIZE.mp3`). Scissors cut
-  his wires for 15 s.
-* **Arts and Crafters** – a rare, shy sighting early on; after your 7th exercise, staring at him
-  makes him charge and whisk you to another part of the school.
+* **Principal** – no running in the halls, no students in the Faculty room → detention (20 s,
+  +5 s each time). AJAN is told where you are. Principal's Keys open the door early.
+* **Playtime** – 5-jump rope game (Space when the rope hits the floor). Scissors cut the rope.
+* **Bully** – blocks a hallway and takes one random item (`BULLYSEE/TAKE/PASS` – placeholders
+  until supplied); with nothing to give he gets bored and leaves.
+* **Gotta Sweep** – sweeps everyone down the halls.
+* **1st Prize** – turns slowly, charges and shoves you. Scissors cut his wires.
+* **Arts and Crafters** – after your 7th exercise, staring at him makes him charge and teleport you.
 
 ### Items
 
-Safety Scissors, Shiny Quarter (vending machines → AJAN Cola / Protein Bar), AJAN Cola (spray that
-pushes characters), Principal's Keys, Protein Bar (stamina to 200%), Swinging Door Lock (15 s),
-Quiet Sneakers (doors make no noise for 30 s), Alarm Clock (lures AJAN), Energy Drink (unlimited
-sprint for 15 s). Three inventory slots; picking up with full hands swaps the selected item.
+Safety Scissors, Shiny Quarter (vending machines), BSODA / AJAN Cola (push characters),
+Principal's Keys, Zesty Protein Bar (stamina), Swinging Door Lock, Quiet Sneakers, Alarm Clock,
+BSED energy drink (unlimited sprint). Only a few items lie in hallways; most are in rooms.
 
 ## Assets
 
 Everything lives in `/assets` and is used as-is:
 
 * Sprites: `AJAN.png`, `AJANBAD.png`, `PRINCIPAL.png`, `PLAYTIME.png`, `BULLY.png`, `SWEEP.png`,
-  `PRIZE.png`, `ARTS.png` (camera-facing billboards, cropped to their alpha bounds at load).
-* Door reactions: `FACE1.png` (grin), `FACE2.png` (eye-roll), `FACE3.png` (shock) – a random one,
-  never the same twice in a row, pops up bottom-right when you open a door.
-* Menu: `MENU.png` (its baked-in labels are covered by the real, clickable buttons). `MENUREF.png`,
-  `REF1.png` and `REF3.png` are references for the menu layout, HUD and look.
-* Audio: `AJANMENU`, `AJANSTART`, `AJANCOIN`, `AJANMAD`, `PRINCIPAL1/2`, `PLAYTIME1/2`, `PRIZE`.
-* **Not supplied yet:** `BULLYSEE.mp3`, `BULLYTAKE.mp3`, `BULLYPASS.mp3`. The game already requests
-  them; until they exist a short synthesized placeholder plays and a console warning is logged.
-  Drop the files into `/assets` with those names and they are used automatically.
-
-Item icons, cash bills, food props, posters, signs, menu boards and all surface textures are drawn
-procedurally on low-resolution canvases. Stomps, doors and other effects are synthesized with Web Audio.
+  `PRIZE.png`, `ARTS.png` (camera-facing flat images, no shadows). Other players are flat 2D
+  pictures of a random kid.
+* `assets/random/`: item icons (scissors, quarter, BSODA, keys, zesty bar, door lock, BSED),
+  cafeteria and restaurant food trays (`Food.webp`), desk clutter (notebooks, papers, pencils),
+  globes, the EXIT sign and the school bus.
+* Door reactions: `FACE1.png`, `FACE2.png`, `FACE3.png` (FACE3 also when AJAN gets mad).
+* Looks: `REF1.png` (entrance hall), `REF3.png` (cafeteria), `REFCLASS.png` (classrooms: white
+  brick, dark blue carpet, chunky wooden desks), `REFERENCEPRINCIPALOFFICE.webp` (office: green
+  band, blue carpet, wooden desks with globes), `MENU.png` / `MENUREF.png` (menu).
+* Audio: voices `AJANMENU`, `AJANSTART`, `AJANCOIN`, `AJANMAD`, `PRINCIPAL1/2`, `PLAYTIME1/2`,
+  `PRIZE` (loudness-normalized so they sit above the music), `STOMP.mp3`, music `musicmenu`,
+  `music1`, `music2`, `musicwrong`, `musicescape` (`.wav`).
+* **Not supplied yet:** `BULLYSEE.mp3`, `BULLYTAKE.mp3`, `BULLYPASS.mp3` – synthesized
+  placeholders play until the files are dropped into `/assets`.
 
 ## Architecture
 
@@ -92,9 +96,9 @@ procedurally on low-resolution canvases. Stomps, doors and other effects are syn
 server/index.js      Express static hosting + Socket.IO rooms, 20 Hz simulation, 15 Hz snapshots
 server/room.js       Authoritative match: phases, doors, pickups, cash, purchases, detention, victory
 server/npcs.js       NPC state machines (AJAN, Principal, Playtime, Bully, Gotta Sweep, 1st Prize, Arts)
-server/exercises.js  Seven exercise generators + validators (+ a reference solver used by tests)
-shared/map.js        The fixed school layout, props, decals, nav grid (used by server and client)
-shared/collision.js  Circle-vs-grid/box collision with sub-stepping
+server/exercises.js  Seven physical exercises: generators, per-step + final validation, test solver
+shared/map.js        The fixed school layout with thin walls on cell edges, props, decals, nav grid
+shared/collision.js  Circle-vs-thin-wall/box collision with sub-stepping
 shared/nav.js        A* pathfinding and line of sight
 public/js/           three.js client: world builder, game session, HUD, exercises UI, audio, post FX
 ```
@@ -102,7 +106,7 @@ public/js/           three.js client: world builder, game session, HUD, exercise
 The server owns all gameplay state. Clients send their own position (validated for speed and walls;
 teleports and wall-clipping are corrected) and request actions with a request id, so a retried
 purchase or pickup can never be applied twice. NPCs run only on the server and are interpolated on
-clients. Exercise solutions never leave the server for the logic puzzles.
+clients. Positional exercise steps are only accepted when the server sees you standing there.
 
 ## Deploying on Render
 
