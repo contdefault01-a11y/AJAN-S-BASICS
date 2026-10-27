@@ -1,6 +1,6 @@
-// Grid A* pathfinding and line-of-sight on the school map.
+// Grid A* pathfinding (with thin walls on cell edges) and line of sight.
 import { CELL } from './constants.js';
-import { T_FLOOR, worldToCell, cellCenter } from './map.js';
+import { E_OPEN, E_WINDOW, E_DOOR, worldToCell, cellCenter } from './map.js';
 
 class MinHeap {
   constructor() { this.a = []; }
@@ -30,25 +30,33 @@ class MinHeap {
   get size() { return this.a.length; }
 }
 
-// passable(idx) -> bool. Returns a list of [cx, cz] cells (start excluded) or null.
-export function findPath(map, sx, sz, gx, gz, passable, maxNodes = 9000) {
+// edgeOk(edge) -> may an NPC pass this edge (open, or an unlocked door)
+export function defaultEdgeOk(doorState) {
+  return (e) => e.t === E_OPEN || (e.t === E_DOOR && !(doorState && doorState[e.d] && doorState[e.d].locked));
+}
+
+// cellOk(idx) -> walkable cell. Returns list of [cx, cz] (start excluded) or null.
+export function findPath(map, sx, sz, gx, gz, cellOk, edgeOk, maxNodes = 9000) {
   const W = map.W;
-  const start = sz * W + sx, goal = gz * W + gx;
-  if (start === goal) return [];
-  if (!passable(goal)) {
-    // snap the goal to the nearest passable neighbour
+  const start = sz * W + sx;
+  if (!map.inBounds(gx, gz) || !cellOk(gz * W + gx)) {
+    // snap to the nearest walkable cell of the same room (never across a thin wall)
+    const goalRoom = map.inBounds(gx, gz) ? map.roomOf[gz * W + gx] : -1;
     let best = -1, bd = 1e9;
     for (let dz = -2; dz <= 2; dz++)
       for (let dx = -2; dx <= 2; dx++) {
         const x = gx + dx, z = gz + dz;
         if (!map.inBounds(x, z)) continue;
         const i = z * W + x;
-        if (passable(i) && dx * dx + dz * dz < bd) { bd = dx * dx + dz * dz; best = i; }
+        if (goalRoom >= 0 && map.roomOf[i] !== goalRoom) continue;
+        if (cellOk(i) && dx * dx + dz * dz < bd) { bd = dx * dx + dz * dz; best = i; }
       }
     if (best < 0) return null;
     gx = best % W; gz = (best / W) | 0;
-    return findPath(map, sx, sz, gx, gz, passable, maxNodes);
   }
+  const goal = gz * W + gx;
+  if (start === goal) return [];
+  const step = (ax, az, bx, bz) => cellOk(bz * W + bx) && edgeOk(map.between(ax, az, bx, bz));
   const g = new Map([[start, 0]]);
   const came = new Map();
   const open = new MinHeap();
@@ -68,10 +76,11 @@ export function findPath(map, sx, sz, gx, gz, passable, maxNodes = 9000) {
         if (!dx && !dz) continue;
         const x = cx + dx, z = cz + dz;
         if (!map.inBounds(x, z)) continue;
+        if (dx && dz) {
+          // diagonal only through an open corner: both L-routes must be walkable
+          if (!(step(cx, cz, x, cz) && step(x, cz, x, z) && step(cx, cz, cx, z) && step(cx, z, x, z))) continue;
+        } else if (!step(cx, cz, x, z)) continue;
         const ni = z * W + x;
-        if (!passable(ni)) continue;
-        // no corner cutting
-        if (dx && dz && (!passable(cz * W + x) || !passable(z * W + cx))) continue;
         const ng = g.get(cur) + (dx && dz ? 1.414 : 1);
         if (ng < (g.get(ni) ?? Infinity)) {
           g.set(ni, ng); came.set(ni, cur);
@@ -85,42 +94,53 @@ export function findPath(map, sx, sz, gx, gz, passable, maxNodes = 9000) {
   return out.reverse();
 }
 
-// Sight test between world points; blocks on walls, closed doors (unless see-through) and exits.
-// Windows are see-through.
+// Sight between world points. Walls, closed doors and exits block; windows do not.
 export function lineOfSight(map, ax, az, bx, bz, doorState) {
   const dx = bx - ax, dz = bz - az;
   const dist = Math.hypot(dx, dz);
-  const steps = Math.ceil(dist / (CELL * 0.25));
-  for (let i = 1; i < steps; i++) {
-    const x = ax + (dx * i) / steps, z = az + (dz * i) / steps;
-    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
-    const t = map.tile(cx, cz);
-    if (t === 2) continue; // window
-    if (t !== T_FLOOR) return false;
-    const d = map.doorAt[map.idx(cx, cz)];
-    if (d >= 0 && doorState && !doorState[d].open) return false;
+  const steps = Math.max(1, Math.ceil(dist / (CELL * 0.2)));
+  let cx = Math.floor(ax / CELL), cz = Math.floor(az / CELL);
+  const pass = (x0, z0, x1, z1) => {
+    if (!map.inBounds(x1, z1)) return false;
+    const e = map.between(x0, z0, x1, z1);
+    if (e.t === E_OPEN || e.t === E_WINDOW) return true;
+    if (e.t === E_DOOR) return !!(doorState && doorState[e.d] && doorState[e.d].open);
+    return false;
+  };
+  for (let i = 1; i <= steps; i++) {
+    const nx = Math.floor((ax + (dx * i) / steps) / CELL), nz = Math.floor((az + (dz * i) / steps) / CELL);
+    if (nx === cx && nz === cz) continue;
+    if (nx !== cx && nz !== cz) {
+      if (!((pass(cx, cz, nx, cz) && pass(nx, cz, nx, nz)) || (pass(cx, cz, cx, nz) && pass(cx, nz, nx, nz)))) return false;
+    } else if (!pass(cx, cz, nx, nz)) return false;
+    cx = nx; cz = nz;
   }
   return true;
 }
 
-// Can a circle of radius r travel in a straight line between two points along walkable nav cells?
-export function straightWalkable(map, ax, az, bx, bz, passable) {
+// Can a circle walk straight from a to b along walkable cells without crossing blocked edges?
+export function straightWalkable(map, ax, az, bx, bz, cellOk, edgeOk) {
   const dx = bx - ax, dz = bz - az;
-  const dist = Math.hypot(dx, dz);
-  const steps = Math.ceil(dist / (CELL * 0.3));
-  const px = (-dz / (dist || 1)) * 0.8, pz = (dx / (dist || 1)) * 0.8;
-  for (let i = 1; i <= steps; i++) {
-    const x = ax + (dx * i) / steps, z = az + (dz * i) / steps;
-    for (const s of [-1, 0, 1]) {
-      const c = worldToCell(x + px * s, z + pz * s);
-      if (!map.inBounds(c.cx, c.cz) || !passable(c.cz * map.W + c.cx)) return false;
+  const dist = Math.hypot(dx, dz) || 1;
+  const px = (-dz / dist) * 0.85, pz = (dx / dist) * 0.85;
+  for (const s of [-1, 0, 1]) {
+    const x0 = ax + px * s, z0 = az + pz * s, x1 = bx + px * s, z1 = bz + pz * s;
+    const steps = Math.ceil(dist / (CELL * 0.2));
+    let c = worldToCell(x0, z0);
+    if (!map.inBounds(c.cx, c.cz) || !cellOk(c.cz * map.W + c.cx)) return false;
+    for (let i = 1; i <= steps; i++) {
+      const n = worldToCell(x0 + ((x1 - x0) * i) / steps, z0 + ((z1 - z0) * i) / steps);
+      if (n.cx === c.cx && n.cz === c.cz) continue;
+      if (!map.inBounds(n.cx, n.cz) || !cellOk(n.cz * map.W + n.cx)) return false;
+      if (n.cx !== c.cx && n.cz !== c.cz) {
+        const okA = map.inBounds(n.cx, c.cz) && cellOk(c.cz * map.W + n.cx) && edgeOk(map.between(c.cx, c.cz, n.cx, c.cz)) && edgeOk(map.between(n.cx, c.cz, n.cx, n.cz));
+        const okB = map.inBounds(c.cx, n.cz) && cellOk(n.cz * map.W + c.cx) && edgeOk(map.between(c.cx, c.cz, c.cx, n.cz)) && edgeOk(map.between(c.cx, n.cz, n.cx, n.cz));
+        if (!okA || !okB) return false;
+      } else if (!edgeOk(map.between(c.cx, c.cz, n.cx, n.cz))) return false;
+      c = n;
     }
   }
   return true;
-}
-
-export function randomCell(rng, list) {
-  return list[Math.floor(rng() * list.length)];
 }
 
 export { cellCenter, worldToCell };

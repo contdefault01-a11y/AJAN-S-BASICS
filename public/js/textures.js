@@ -88,6 +88,23 @@ export const SURFACES = {
     speckle(g, w, h, '#f6e7c8', ['#efdfbd', '#fbeed4'], 0.4, 9);
     g.fillStyle = '#f26522'; g.fillRect(0, 44, 64, 20); g.fillStyle = '#b8410e'; g.fillRect(0, 44, 64, 2);
   }),
+  bluecarpet: () => canvas(64, 64, (g, w, h) => speckle(g, w, h, '#1d2c78', ['#16236a', '#26388e', '#101a55', '#2c41a0'], 0.9, 21, 2)),
+  brickgreen: () => canvas(64, 64, (g, w, h) => {
+    speckle(g, w, h, '#ecebe6', ['#e2e1db', '#f5f5f1', '#d9d8d2'], 0.5, 22);
+    g.fillStyle = '#c9c8c1';
+    for (let y = 0; y < 64; y += 8) { g.fillRect(0, y, 64, 1); const off = (y / 8) % 2 ? 8 : 0; for (let x = off; x < 64; x += 16) g.fillRect(x, y, 1, 8); }
+  }),
+  greenband: () => canvas(16, 16, (g) => { g.fillStyle = '#18c418'; g.fillRect(0, 0, 16, 16); g.fillStyle = '#0e8f0e'; g.fillRect(0, 14, 16, 2); }),
+  hedge: () => canvas(64, 64, (g, w, h) => {
+    speckle(g, w, h, '#1f5a17', ['#174a11', '#2a6e20', '#123d0d', '#357f25'], 0.9, 23, 2);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; for (let i = 0; i < 12; i++) g.fillRect((i * 23) % 64, (i * 37) % 64, 4, 3);
+  }),
+  grass: () => canvas(64, 64, (g, w, h) => speckle(g, w, h, '#4caa36', ['#3f9a2c', '#5bbb42', '#357f25', '#68c84e'], 0.9, 24, 2)),
+  deskwood: () => canvas(64, 64, (g, w, h) => {
+    speckle(g, w, h, '#c8792e', ['#b86a24', '#d58a3c', '#a95f1e'], 0.35, 25);
+    g.fillStyle = 'rgba(110,55,15,0.55)';
+    for (let y = 2; y < 64; y += 5) for (let x = 0; x < 64; x++) if (Math.sin(x * 0.2 + y) > 0.3) g.fillRect(x, y + Math.round(Math.sin(x * 0.15 + y * 0.7) * 1.5), 1, 1);
+  }),
   carpet: () => canvas(64, 64, (g, w, h) => speckle(g, w, h, '#c9a77a', ['#b8956a', '#d8b98d', '#a88660', '#e2c79e', '#8d6f4c'], 0.9, 10, 2)),
   classcarpet: () => canvas(64, 64, (g, w, h) => speckle(g, w, h, '#7f8f9b', ['#71818d', '#8d9da9', '#64737e'], 0.8, 11, 2)),
   gymfloor: () => canvas(64, 64, (g, w, h) => {
@@ -124,7 +141,7 @@ export function surfaceTex(name) {
 // ------------------------------------------------------------------ doors & signs
 export function doorTex(kind, label = '') {
   return cached('door:' + kind + ':' + label, () => toTex(canvas(64, 128, (g) => {
-    const colors = { normal: '#1d2fb0', office: '#6b3e1c', faculty: '#7a1010', janitor: '#4b5a3a', kfc: '#c8102e', popeyes: '#f26522', ex: '#1d2fb0', plaza: '#2b6f9e' };
+    const colors = { entrance: '#1d2fb0', normal: '#1d2fb0', office: '#6b3e1c', faculty: '#7a1010', janitor: '#4b5a3a', kfc: '#c8102e', popeyes: '#f26522', ex: '#1d2fb0', plaza: '#2b6f9e' };
     g.fillStyle = '#d7d7d7'; g.fillRect(0, 0, 64, 128);
     g.fillStyle = colors[kind] || colors.normal; g.fillRect(3, 3, 58, 125);
     g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(3, 3, 2, 125); g.fillRect(59, 3, 2, 125);
@@ -159,6 +176,11 @@ export function exitTex(open) {
 
 export function signTex(key) {
   return cached('sign:' + key, () => {
+    if (key === 'exit' && images[IMAGE_ICONS.exit]) return toTex(iconCanvas('exit'), { repeat: false });
+    if (key === 'sign_school') return toTex(canvas(256, 40, (g) => {
+      g.fillStyle = '#1e7a2e'; g.fillRect(0, 0, 256, 40); g.fillStyle = '#fff'; g.fillRect(3, 3, 250, 34); g.fillStyle = '#1e7a2e'; g.fillRect(5, 5, 246, 30);
+      g.fillStyle = '#fff'; g.font = 'bold 20px "Comic Sans MS", sans-serif'; g.textAlign = 'center'; g.fillText("AJAN'S SCHOOLHOUSE", 128, 28);
+    }), { repeat: false });
     if (key === 'exit') return toTex(canvas(64, 28, (g) => {
       g.fillStyle = '#f2f2f2'; g.fillRect(0, 0, 64, 28);
       g.fillStyle = '#e01010'; g.font = 'bold 20px "Comic Sans MS", sans-serif'; g.textAlign = 'center'; g.fillText('EXIT', 32, 22);
@@ -247,13 +269,14 @@ export function menuBoardTex(rid) {
 }
 
 const STATION_STYLE = {
-  order: ['#ff7b00', 'ORDER', 'ASSEMBLY'],
-  register: ['#1aa34a', 'CASH', 'REGISTER'],
-  timing: ['#e03030', 'KITCHEN', 'TIMING'],
-  ingredients: ['#7a3fe0', 'INGREDIENT', 'SELECTION'],
-  prep: ['#e0b000', 'FOOD', 'PREPARATION'],
-  quiz: ['#1f6fe0', 'TRAINING', 'QUIZ'],
-  qc: ['#00a7a7', 'QUALITY', 'CONTROL'],
+  pushups: ['#ff7b00', 'PUSH-UPS', 'E + G'],
+  impossible: ['#1aa34a', 'REACTION', 'KEYS'],
+  sequence: ['#1aa34a', 'REACTION', 'KEYS'],
+  cones: ['#e03030', 'CONE', 'SPRINT'],
+  order: ['#7a3fe0', 'ORDER', 'RUN'],
+  fryer: ['#e0b000', 'KITCHEN', 'TIMING'],
+  mop: ['#1f6fe0', 'CLEAN', 'UP'],
+  boxes: ['#00a7a7', 'BOX', 'CARRY'],
 };
 export function stationTex(type, done, n) {
   return cached('station:' + type + done + n, () => toTex(canvas(96, 96, (g) => {
@@ -369,14 +392,55 @@ const FOOD = {
   bucketfloor: (g) => { g.fillStyle = '#888'; g.fillRect(16, 26, 32, 30); },
 };
 
+// Items and props that come from the supplied images in /assets/random/
+export const IMAGE_ICONS = {
+  scissors: 'random/SafetyScissorsIcon_Large', coin: 'random/QuarterIcon_Large', soda: 'random/BSODA',
+  keys: 'random/KeyIcon_Large', bar: 'random/ZestyBarIcon_Large', lock: 'random/SwingingDoorLockIcon_Large',
+  energy: 'random/BBTimesAsset_bigicon_BSED', food: 'random/Food', notebooks: 'random/Notebooks',
+  papers: 'random/Papers', pencils: 'random/Pencils', globe: 'random/Globe', exit: 'random/ExitSignSprite',
+  bus: 'random/Bus',
+};
+
+const MORE = {
+  bush: (g) => { g.fillStyle = '#2d7a22'; for (const [x, y, r] of [[20, 44, 16], [44, 44, 16], [32, 30, 18]]) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); } g.fillStyle = '#4caa36'; g.fillRect(24, 26, 6, 4); g.fillRect(40, 38, 6, 4); },
+  flower: (g) => { g.fillStyle = '#2f8a24'; g.fillRect(31, 30, 3, 34); g.fillStyle = ['#ff4a8a', '#ffe14a', '#ffffff', '#ff7a2a'][Math.floor(Math.random() * 4)]; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(32 + Math.cos(i) * 8, 24 + Math.sin(i) * 8, 6, 0, 7); g.fill(); } g.fillStyle = '#ffcc00'; g.beginPath(); g.arc(32, 24, 5, 0, 7); g.fill(); },
+  cone: (g) => { g.fillStyle = '#ff6a00'; g.beginPath(); g.moveTo(32, 4); g.lineTo(52, 58); g.lineTo(12, 58); g.fill(); g.fillStyle = '#fff'; g.fillRect(22, 30, 20, 6); g.fillRect(17, 44, 30, 6); g.fillStyle = '#c84f00'; g.fillRect(8, 56, 48, 6); },
+  spill: (g) => { g.fillStyle = 'rgba(120,200,255,0.85)'; g.beginPath(); g.ellipse(32, 48, 28, 12, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(20, 44, 10, 3); },
+  box: (g) => { g.fillStyle = '#b8873f'; g.fillRect(10, 18, 44, 40); g.fillStyle = '#8f6328'; g.fillRect(10, 18, 44, 6); g.fillStyle = '#d9b06a'; g.fillRect(28, 18, 8, 40); },
+  shelf: (g) => { g.fillStyle = '#7a5a3a'; g.fillRect(6, 4, 6, 58); g.fillRect(52, 4, 6, 58); for (let y = 14; y < 64; y += 16) g.fillRect(6, y, 52, 4); g.fillStyle = '#3cff3c'; g.fillRect(16, 2, 32, 8); },
+  arrow: (g) => { g.fillStyle = '#ffe600'; g.beginPath(); g.moveTo(32, 60); g.lineTo(8, 30); g.lineTo(22, 30); g.lineTo(22, 4); g.lineTo(42, 4); g.lineTo(42, 30); g.lineTo(56, 30); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 3; g.stroke(); },
+  counter: (g) => { g.fillStyle = '#3cff3c'; g.fillRect(4, 20, 56, 12); g.fillStyle = '#000'; g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.fillText('SERVE', 32, 30); },
+  nuggets: (g) => { g.fillStyle = '#d99a3a'; for (const [x, y] of [[20, 40], [34, 36], [44, 46], [28, 50]]) { g.beginPath(); g.ellipse(x, y, 9, 7, 0.4, 0, 7); g.fill(); } },
+  pie: (g) => { g.fillStyle = '#c47a2c'; g.fillRect(10, 32, 44, 18); g.fillStyle = '#e8a33a'; g.fillRect(12, 30, 40, 4); g.fillStyle = '#7a2a10'; g.fillRect(18, 38, 6, 3); g.fillRect(34, 40, 6, 3); },
+};
+
 export function iconCanvas(key) {
-  return cached('iconc:' + key, () => canvas(64, 64, (g) => (ICONS[key] || FOOD[key] || ICONS.coin)(g)));
+  return cached('iconc:' + key, () => {
+    const img = IMAGE_ICONS[key] && images[IMAGE_ICONS[key]];
+    if (img) {
+      const S = 128;
+      return canvas(S, S, (g) => {
+        const k = Math.min(S / img.width, S / img.height);
+        g.drawImage(img, (S - img.width * k) / 2, S - img.height * k, img.width * k, img.height * k);
+      });
+    }
+    return canvas(64, 64, (g) => (ICONS[key] || FOOD[key] || MORE[key] || ICONS.coin)(g));
+  });
 }
 export function iconTex(key) {
   return cached('icon:' + key, () => toTex(iconCanvas(key), { repeat: false }));
 }
 export function iconDataURL(key) {
   return cached('iconurl:' + key, () => iconCanvas(key).toDataURL());
+}
+export function imageTex(key) {
+  return cached('img:' + key, () => {
+    const t = new THREE.Texture(images[key]);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.magFilter = THREE.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  });
 }
 
 // Character sprite: crop the PNG to its alpha bounding box so the billboard hugs the art.
@@ -404,19 +468,33 @@ export function spriteTex(key) {
   });
 }
 
-export function playerSpriteTex(color) {
-  return cached('playerspr:' + color, () => {
-    const c = canvas(32, 64, (g) => {
-      g.fillStyle = '#f1c27d'; g.fillRect(11, 2, 10, 10);
-      g.fillStyle = '#3b2414'; g.fillRect(10, 1, 12, 4);
-      g.fillStyle = '#000'; g.fillRect(13, 6, 2, 2); g.fillRect(17, 6, 2, 2);
-      g.fillStyle = color; g.fillRect(8, 12, 16, 22); g.fillRect(4, 14, 4, 16); g.fillRect(24, 14, 4, 16);
-      g.fillStyle = '#f1c27d'; g.fillRect(4, 30, 4, 4); g.fillRect(24, 30, 4, 4);
-      g.fillStyle = '#2a3a6a'; g.fillRect(9, 34, 6, 24); g.fillRect(17, 34, 6, 24);
-      g.fillStyle = '#111'; g.fillRect(8, 58, 8, 4); g.fillRect(16, 58, 8, 4);
+// Other players: a flat 2D picture of a random kid (hair, skin and clothes vary per player).
+export function playerSpriteTex(color, seed = 1) {
+  return cached('playerspr:' + color + seed, () => {
+    const r = seeded(seed * 7919 + 13);
+    const skin = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'][Math.floor(r() * 5)];
+    const hair = ['#2b1a0e', '#6b3e1c', '#e8c35a', '#111111', '#a33a1a'][Math.floor(r() * 5)];
+    const pants = ['#2a3a6a', '#333333', '#5a4a2a', '#1d4d8f'][Math.floor(r() * 4)];
+    const longHair = r() < 0.4;
+    const c = canvas(64, 128, (g) => {
+      g.imageSmoothingEnabled = false;
+      // legs + shoes
+      g.fillStyle = pants; g.fillRect(19, 74, 11, 44); g.fillRect(34, 74, 11, 44);
+      g.fillStyle = '#ffffff'; g.fillRect(16, 116, 15, 8); g.fillRect(33, 116, 15, 8);
+      g.fillStyle = '#222'; g.fillRect(16, 122, 15, 3); g.fillRect(33, 122, 15, 3);
+      // body + arms
+      g.fillStyle = color; g.fillRect(15, 34, 34, 42); g.fillRect(6, 36, 10, 30); g.fillRect(48, 36, 10, 30);
+      g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(15, 70, 34, 6);
+      g.fillStyle = skin; g.fillRect(6, 66, 10, 8); g.fillRect(48, 66, 10, 8); g.fillRect(27, 28, 10, 8);
+      // head
+      g.fillStyle = skin; g.beginPath(); g.ellipse(32, 18, 13, 15, 0, 0, 7); g.fill();
+      g.fillStyle = hair; g.beginPath(); g.ellipse(32, 9, 14, 8, 0, Math.PI, 0); g.fill(); g.fillRect(18, 6, 28, 6);
+      if (longHair) { g.fillRect(17, 8, 5, 24); g.fillRect(42, 8, 5, 24); }
+      g.fillStyle = '#fff'; g.fillRect(24, 16, 6, 5); g.fillRect(34, 16, 6, 5);
+      g.fillStyle = '#000'; g.fillRect(26, 17, 3, 3); g.fillRect(36, 17, 3, 3);
+      g.fillStyle = '#a0302a'; g.fillRect(27, 26, 10, 2);
     });
-    const t = toTex(c, { repeat: false });
-    return { tex: t, aspect: 0.5 };
+    return { tex: toTex(c, { repeat: false }), aspect: 0.5 };
   });
 }
 

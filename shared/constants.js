@@ -115,7 +115,7 @@ export const CASH_VALUES = [
 ];
 
 export const AUDIO = Object.freeze({
-  menu: 'AJANMENU.mp3',
+  menuvoice: 'AJANMENU.mp3',
   start: 'AJANSTART.mp3',
   coin: 'AJANCOIN.mp3',
   principal1: 'PRINCIPAL1.mp3',
@@ -127,7 +127,18 @@ export const AUDIO = Object.freeze({
   bullypass: 'BULLYPASS.mp3',
   mad: 'AJANMAD.mp3',
   prize: 'PRIZE.mp3',
+  stomp: 'STOMP.mp3',
+  // music (looping, quieter than voices)
+  menu: 'musicmenu.wav',
+  music1: 'music1.wav',
+  music2: 'music2.wav',
+  musicwrong: 'musicwrong.wav',
+  musicescape: 'musicescape.wav',
 });
+
+// Story beats of a match (room-wide): AJAN welcomes you, gives a coin after the first
+// exercise, and the impossible second exercise starts the chase.
+export const STORY = Object.freeze({ WELCOME: 'welcome', COIN: 'coin', CHASE: 'chase' });
 
 export function fmtCash(cents) {
   return '$' + (cents / 100).toFixed(2);

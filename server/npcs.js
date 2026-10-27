@@ -2,8 +2,8 @@
 // handles grid pathfinding, door opening, collision-aware movement, pushes and stuck recovery.
 import { CELL } from '../shared/constants.js';
 import { findPath, lineOfSight, straightWalkable } from '../shared/nav.js';
-import { cellCenter, worldToCell, SPAWNS, BULLY_SPOTS } from '../shared/map.js';
-import { moveCircle } from '../shared/collision.js';
+import { cellCenter, worldToCell, SPAWNS, BULLY_SPOTS, E_DOOR } from '../shared/map.js';
+import { moveCircle, segmentBlocked } from '../shared/collision.js';
 
 export const fwd = (yaw) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 export const yawTo = (dx, dz) => Math.atan2(-dx, -dz);
@@ -35,14 +35,32 @@ export class Npc {
   get map() { return this.room.map; }
   cell() { return worldToCell(this.x, this.z); }
 
-  passable = (i) => this.map.nav[i] === 1 && !this.room.doorLockedIdx(i);
+  passable = (i) => this.map.nav[i] === 1;
+  edgeOk = (e) => this.room.npcEdgeOk(e);
+
+  // open any closed door between our cell and the cell we are heading into
+  openDoorsToward(tx, tz) {
+    const c = this.cell();
+    const dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz) || 1;
+    const n = worldToCell(this.x + (dx / d) * 1.4, this.z + (dz / d) * 1.4);
+    const tryEdge = (ax, az, bx, bz) => {
+      if (Math.abs(ax - bx) + Math.abs(az - bz) !== 1) return;
+      const e = this.map.between(ax, az, bx, bz);
+      if (e.t === E_DOOR) this.room.openDoor(e.d, null, this);
+    };
+    if (n.cx !== c.cx && n.cz !== c.cz) { tryEdge(c.cx, c.cz, n.cx, c.cz); tryEdge(n.cx, c.cz, n.cx, n.cz); tryEdge(c.cx, c.cz, c.cx, n.cz); tryEdge(c.cx, n.cz, n.cx, n.cz); }
+    else tryEdge(c.cx, c.cz, n.cx, n.cz);
+  }
 
   setGoal(x, z, force = false) {
     const g = worldToCell(x, z);
     if (!force && this.goal && this.goal.cx === g.cx && this.goal.cz === g.cz && this.path && this.room.t < this.repathAt) return;
     this.goal = { cx: g.cx, cz: g.cz, x, z };
+    this.repathAt = this.room.t + 0.6;
+    // close and nothing in between: walk straight at it (no grid snapping back and forth)
+    if (Math.hypot(x - this.x, z - this.z) < CELL * 2.5 && !segmentBlocked(this.map, this.x, this.z, x, z, this.room.npcSolid)) { this.path = []; return; }
     const c = this.cell();
-    this.path = findPath(this.map, c.cx, c.cz, g.cx, g.cz, this.passable);
+    this.path = findPath(this.map, c.cx, c.cz, g.cx, g.cz, this.passable, this.edgeOk);
     this.repathAt = this.room.t + 0.6;
     if (this.path) this.path = this.path.map(([px, pz]) => cellCenter(px, pz));
     if (this.path && this.path.length) this.path[this.path.length - 1] = this.passable(g.cz * this.map.W + g.cx) ? { x, z } : this.path[this.path.length - 1];
@@ -76,15 +94,9 @@ export class Npc {
       return true;
     }
     // string-pull: skip waypoints we can walk straight to
-    while (this.path.length > 1 && straightWalkable(this.map, this.x, this.z, this.path[1].x, this.path[1].z, this.passable)) this.path.shift();
+    while (this.path.length > 1 && straightWalkable(this.map, this.x, this.z, this.path[1].x, this.path[1].z, this.passable, this.edgeOk)) this.path.shift();
     const wp = this.path[0];
-    // open any closed door on the way
-    const wc = worldToCell(wp.x, wp.z);
-    const ahead = worldToCell(this.x + Math.sign(wp.x - this.x) * CELL * 0.9, this.z + Math.sign(wp.z - this.z) * CELL * 0.9);
-    for (const c of [wc, ahead]) {
-      const d = this.map.doorAt[this.map.idx(c.cx, c.cz)];
-      if (d >= 0) this.room.openDoor(d, null, this);
-    }
+    this.openDoorsToward(wp.x, wp.z);
     const dx = wp.x - this.x, dz = wp.z - this.z;
     const d = Math.hypot(dx, dz);
     if (d < 0.05) { this.path.shift(); return true; }
@@ -175,10 +187,10 @@ export class Ajan extends Npc {
   }
 
   interval() {
-    if (this.room.furious) return 0.36;
+    if (this.room.furious) return 0.33;
     const L = Math.max(1, this.room.maxProgress());
-    const base = 1.5 - ((L - 1) / 6) * 1.0; // 1.5s -> 0.5s
-    return Math.max(0.42, base - this.angerBonus);
+    const base = 1.25 - ((L - 1) / 6) * 0.8; // 1.25s -> 0.45s
+    return Math.max(0.4, base - this.angerBonus);
   }
 
   hear(noise) {
@@ -188,11 +200,16 @@ export class Ajan extends Npc {
     if (!this.heard || noise.priority >= this.heard.priority || this.room.t - this.heard.t > 3) this.heard = { ...noise, t: this.room.t };
   }
 
+  // The chase begins: AJAN vanishes from the entrance hall and reappears in the cafeteria.
   becomeAngry() {
     if (this.mood === 'angry') return;
     this.mood = 'angry';
     this.state = 'hunt';
-    this.nextStomp = this.room.t + 0.8;
+    const c = cellCenter(...SPAWNS.ajanChase);
+    this.x = c.x; this.z = c.z;
+    this.path = null; this.goal = null; this.heard = null; this.lastSeen = null;
+    this.lastProgress = { x: this.x, z: this.z, t: this.room.t };
+    this.nextStomp = this.room.t + 2.5;
     this.room.event({ e: 'ajan_angry' });
   }
 
@@ -200,26 +217,22 @@ export class Ajan extends Npc {
     const room = this.room, t = room.t;
     if (this.applyPush(dt)) return;
 
-    if (this.mood === 'happy') { this.state = 'idle'; return; }
-
-    if (this.mood === 'coin') {
-      // "You earned a coin, come over here!" — walks calmly toward the player, gives a quarter.
-      this.state = 'coin';
-      const p = room.players.get(this.coinTarget);
-      if (p && room.isActive(p)) {
-        if (dist(this, p) < 3.2) {
-          if (!p.gotAjanCoin) {
-            p.gotAjanCoin = true;
-            room.giveItem(p, 'coin', 'AJAN handed you a Shiny Quarter!');
-            this.coinUntil = Math.min(this.coinUntil, t + 2.5);
-          }
-          this.yaw = yawTo(p.x - this.x, p.z - this.z);
-        } else {
-          this.setGoal(p.x, p.z);
-          this.followPath(3.2 * dt);
+    if (this.mood === 'happy' || this.mood === 'coin') {
+      // stands in the entrance hall; after the first exercise he waits for you with a coin
+      this.state = this.mood === 'coin' ? 'coin' : 'idle';
+      let near = null, nd = 1e9;
+      for (const p of room.players.values()) {
+        if (!room.isActive(p)) continue;
+        const d = dist(this, p);
+        if (d < nd) { nd = d; near = p; }
+        if (this.mood === 'coin' && d < 3.6 && !p.gotAjanCoin && p.exercisesDone.size >= 1) {
+          p.gotAjanCoin = true;
+          p.dirty = true;
+          room.giveItem(p, 'coin', 'AJAN: "Here is your coin! Now do the next exercise!"');
+          room.sfx('pickup', null, p.id);
         }
       }
-      if (t >= this.coinUntil) this.becomeAngry();
+      if (near) this.yaw = yawTo(near.x - this.x, near.z - this.z);
       return;
     }
 
@@ -308,7 +321,7 @@ export class Principal extends Npc {
       this.thinkAt = t + 0.15;
       if (this.state !== 'chase') {
         for (const p of room.players.values()) {
-          if (!room.isActive(p) || p.detention) continue;
+          if (!room.canInteract(p) || p.detention) continue;
           if (!this.canSee(p, 38)) continue;
           const violation = room.ruleViolation(p);
           if (!violation) continue;
@@ -327,11 +340,11 @@ export class Principal extends Npc {
 
     if (this.state === 'chase') {
       const p = room.players.get(this.target);
-      if (!p || !room.isActive(p) || p.detention || t > this.chaseUntil) { this.state = 'wander'; this.target = null; return; }
+      if (!p || !room.canInteract(p) || p.detention || t > this.chaseUntil) { this.state = 'wander'; this.target = null; return; }
       if (this.canSee(p, 80)) this.lostAt = t;
       if (t - this.lostAt > 7) { this.state = 'wander'; this.target = null; return; }
       this.setGoal(p.x, p.z);
-      this.followPath(11.5 * dt);
+      this.followPath(13.5 * dt);
       if (dist(this, p) < 2.0) {
         room.startDetention(p, this);
         this.state = 'wander';
@@ -343,7 +356,7 @@ export class Principal extends Npc {
         const g = this.randomHallGoal(20);
         this.setGoal(g.x, g.z, true);
       }
-      this.followPath(4.5 * dt);
+      this.followPath(6 * dt);
     }
     if (this.checkStuck(dt, true)) this.goal = null;
   }
@@ -365,17 +378,17 @@ export class Playtime extends Npc {
     if (this.applyPush(dt)) { if (this.state === 'approach') this.state = 'wander'; return; }
     if (this.state === 'jumping') {
       const p = room.players.get(this.target);
-      if (!p || !p.jump || !room.isActive(p)) { this.endEncounter(false); return; }
+      if (!p || !p.jump || !room.canInteract(p)) { this.endEncounter(false); return; }
       this.yaw = yawTo(p.x - this.x, p.z - this.z);
       return;
     }
-    if (this.state === 'sad' && t < this.sadUntil) { this.followPath(3 * dt); return; }
+    if (this.state === 'sad' && t < this.sadUntil) { this.followPath(4 * dt); return; }
     if (this.state === 'sad') this.state = 'wander';
 
     if (this.state === 'wander' && t >= this.thinkAt && t >= this.cooldownUntil) {
       this.thinkAt = t + 0.25;
       for (const p of room.players.values()) {
-        if (!room.isActive(p) || p.detention || p.jump || t < (p.cd.playtime || 0)) continue;
+        if (!room.canInteract(p) || p.detention || p.jump || t < (p.cd.playtime || 0)) continue;
         if (!this.canSee(p, 30)) continue;
         this.state = 'approach';
         this.target = p.id;
@@ -387,9 +400,9 @@ export class Playtime extends Npc {
 
     if (this.state === 'approach') {
       const p = room.players.get(this.target);
-      if (!p || !room.isActive(p) || p.detention || p.jump || t > this.approachUntil) { this.state = 'wander'; this.target = null; return; }
+      if (!p || !room.canInteract(p) || p.detention || p.jump || t > this.approachUntil) { this.state = 'wander'; this.target = null; return; }
       this.setGoal(p.x, p.z);
-      this.followPath(9.5 * dt);
+      this.followPath(11.5 * dt);
       if (dist(this, p) < 2.4) {
         this.state = 'jumping';
         room.startJumpRope(p, this);
@@ -399,7 +412,7 @@ export class Playtime extends Npc {
         const g = this.randomHallGoal(15);
         this.setGoal(g.x, g.z, true);
       }
-      this.followPath(4 * dt);
+      this.followPath(5.5 * dt);
     }
     if (this.checkStuck(dt, this.state !== 'jumping')) this.goal = null;
   }
@@ -493,7 +506,7 @@ export class Bully extends Npc {
       if (!near || this.leaveAt) { this.relocate(30 + room.rng() * 30); return; }
     }
     for (const p of room.players.values()) {
-      if (!room.isActive(p)) continue;
+      if (!room.canInteract(p)) continue;
       const d = dist(this, p);
       if (d < 16 && t >= (p.cd.bullySee || 0) && this.canSee(p, 16)) {
         p.cd.bullySee = t + 20;
@@ -555,7 +568,7 @@ export class Sweep extends Npc {
       }
       return;
     }
-    const speed = this.state === 'sweeping' ? 14 : 10;
+    const speed = this.state === 'sweeping' ? 16 : 12;
     if (this.state === 'sweeping') {
       if (t >= this.sweepUntil) {
         this.state = 'return';
@@ -584,7 +597,7 @@ export class Sweep extends Npc {
     if (v > 1) {
       const nx = this.vel.x / v, nz = this.vel.z / v;
       for (const p of room.players.values()) {
-        if (!room.isActive(p) || p.detention) continue;
+        if (!room.canInteract(p) || p.detention) continue;
         if (dist(this, p) < 2.3) room.pushPlayer(p, nx * speed * 1.05, nz * speed * 1.05, 0.3);
       }
       for (const n of room.npcs) {
@@ -634,7 +647,7 @@ export class Prize extends Npc {
     if ((this.state === 'wander') && t >= this.thinkAt) {
       this.thinkAt = t + 0.3;
       for (const p of room.players.values()) {
-        if (!room.isActive(p) || p.detention) continue;
+        if (!room.canInteract(p) || p.detention) continue;
         if (!this.canSee(p, 36)) continue;
         this.state = 'turning';
         this.target = p.id;
@@ -654,7 +667,7 @@ export class Prize extends Npc {
         const wp = this.path[0];
         const off = this.turnToward(wp.x, wp.z, 1.4, dt);
         const keepYaw = this.yaw;
-        if (off < 0.5) this.followPath(3 * dt);
+        if (off < 0.5) this.followPath(4 * dt);
         this.yaw = keepYaw;
       }
       if (this.checkStuck(dt, true)) this.goal = null;
@@ -662,7 +675,7 @@ export class Prize extends Npc {
     }
 
     const p = room.players.get(this.target);
-    if (!p || !room.isActive(p)) { this.state = 'wander'; this.speed = 0; return; }
+    if (!p || !room.canInteract(p)) { this.state = 'wander'; this.speed = 0; return; }
 
     if (this.state === 'turning') {
       const off = this.turnToward(p.x, p.z, 0.9, dt);
@@ -673,17 +686,15 @@ export class Prize extends Npc {
 
     if (this.state === 'charge') {
       this.turnToward(p.x, p.z, 0.45, dt);
-      this.speed = Math.min(19, this.speed + 16 * dt);
+      this.speed = Math.min(21, this.speed + 18 * dt);
       const f = fwd(this.yaw);
       const before = { x: this.x, z: this.z };
       // open doors in front
-      const ahead = worldToCell(this.x + f.x * 2, this.z + f.z * 2);
-      const d = this.map.doorAt[this.map.idx(ahead.cx, ahead.cz)];
-      if (d >= 0) room.openDoor(d, null, this);
+      this.openDoorsToward(this.x + f.x * 2, this.z + f.z * 2);
       this.moveBy(f.x * this.speed * dt, f.z * this.speed * dt);
       const moved = Math.hypot(this.x - before.x, this.z - before.z);
       for (const pl of room.players.values()) {
-        if (!room.isActive(pl) || pl.detention) continue;
+        if (!room.canInteract(pl) || pl.detention) continue;
         const dx = pl.x - this.x, dz = pl.z - this.z;
         const along = dx * f.x + dz * f.z;
         if (Math.hypot(dx, dz) < 2.4 && along > -0.3) room.pushPlayer(pl, f.x * Math.max(this.speed, 8), f.z * Math.max(this.speed, 8), 0.3);
@@ -741,7 +752,7 @@ export class Arts extends Npc {
 
   update(dt) {
     const room = this.room, t = room.t;
-    const all = [...room.players.values()].filter((p) => room.isActive(p));
+    const all = [...room.players.values()].filter((p) => room.canInteract(p));
     const hunters = all.filter((p) => p.exercisesDone.size >= 7);
     const active = hunters.length > 0;
 
@@ -792,9 +803,9 @@ export class Arts extends Npc {
 
     if (this.state === 'charge') {
       const p = room.players.get(this.target);
-      if (!p || !room.isActive(p) || t > this.chargeUntil) { this.goAway(); return; }
+      if (!p || !room.canInteract(p) || t > this.chargeUntil) { this.goAway(); return; }
       this.setGoal(p.x, p.z);
-      this.followPath(27 * dt);
+      this.followPath(30 * dt);
       if (dist(this, p) < 2.2) {
         room.artsTeleport(p);
         this.goAway();

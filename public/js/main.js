@@ -10,6 +10,8 @@ import { Game, escapeHtml } from './game.js';
 
 const $ = (id) => document.getElementById(id);
 const IMAGES = ['AJAN', 'AJANBAD', 'PRINCIPAL', 'PLAYTIME', 'BULLY', 'SWEEP', 'PRIZE', 'ARTS', 'FACE1', 'FACE2', 'FACE3'];
+// supplied item / prop pictures in /assets/random (webp)
+const RANDOM_IMAGES = ['SafetyScissorsIcon_Large', 'QuarterIcon_Large', 'BSODA', 'KeyIcon_Large', 'ZestyBarIcon_Large', 'SwingingDoorLockIcon_Large', 'BBTimesAsset_bigicon_BSED', 'Food', 'Notebooks', 'Papers', 'Pencils', 'Globe', 'ExitSignSprite', 'Bus'];
 
 const DEFAULTS = { master: 0.8, music: 0.6, sfx: 0.9, sens: 1, fov: 65, lowres: false, shake: true, name: '' };
 function loadSettings() {
@@ -41,7 +43,7 @@ function setupRenderer() {
   r.outputColorSpace = THREE.SRGBColorSpace;
   app.renderer = r;
   app.scene = new THREE.Scene();
-  app.scene.background = new THREE.Color('#000000');
+  app.scene.background = new THREE.Color('#8fd0ff'); // sky, only visible from the front garden
   app.camera = new THREE.PerspectiveCamera(app.settings.fov, 1, 0.1, 400);
   app.postfx = new PostFX(r);
   const resize = () => {
@@ -66,10 +68,12 @@ function buildStaticWorld() {
   app.scene.add(app.world.root);
   // decorative food / cleaning sprites (flat, camera-facing)
   app.foodSprites = [];
-  for (const f of app.map.foodSprites) {
+  for (const f of app.map.sprites) {
     const s = f.s || 1;
-    const geo = new THREE.PlaneGeometry(s, s).translate(0, s / 2, 0);
-    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: iconTex(f.key), alphaTest: 0.5, side: THREE.DoubleSide }));
+    const tex = iconTex(f.key);
+    const asp = tex.image ? tex.image.width / tex.image.height : 1;
+    const geo = new THREE.PlaneGeometry(s * asp, s).translate(0, s / 2, 0);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }));
     m.position.set(f.x, f.y, f.z);
     app.scene.add(m);
     app.foodSprites.push(m);
@@ -87,7 +91,12 @@ function backToMenu() {
   if (app.game) { app.game.dispose(); app.game = null; net.leave(); }
   audio.stopAll();
   show('menu');
+  menuMusic();
+}
+
+function menuMusic() {
   audio.playMusic('menu');
+  audio.play('menuvoice', { dedupe: 'menuvoice' });
 }
 
 let optionsReturn = 'menu';
@@ -194,6 +203,7 @@ async function startSession({ solo, code }) {
   net.key = res.key;
   $('mp-msg').textContent = '';
   audio.stopMusic();
+  audio.stop('menuvoice');
   if (app.game) app.game.dispose();
   app.game = new Game(app, res.init, { onRestartSolo: () => { backToMenuQuiet(); startSession({ solo: true }); } });
   show('none');
@@ -229,7 +239,8 @@ async function boot() {
   const imgs = {};
   let n = 0;
   await Promise.all([
-    Promise.all(IMAGES.map(async (k) => { imgs[k] = await loadImage('/assets/' + k + '.png'); pImg = ++n / IMAGES.length; prog(); })),
+    Promise.all(IMAGES.map(async (k) => { imgs[k] = await loadImage('/assets/' + k + '.png'); pImg = ++n / (IMAGES.length + RANDOM_IMAGES.length); prog(); })),
+    Promise.all(RANDOM_IMAGES.map(async (k) => { imgs['random/' + k] = await loadImage('/assets/random/' + k + '.webp'); pImg = ++n / (IMAGES.length + RANDOM_IMAGES.length); prog(); })),
     audio.loadAll((p) => { pAud = p; prog(); }),
   ]);
   setImages(imgs);
@@ -238,7 +249,7 @@ async function boot() {
   buildStaticWorld();
   prog();
   show('menu');
-  audio.playMusic('menu');
+  menuMusic();
 }
 
 function loop() {
