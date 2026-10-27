@@ -82,7 +82,7 @@ test('two clients share one authoritative match', async () => {
     assert.equal([ra.ok, rb.ok].filter(Boolean).length, 1, 'only one client got the cash');
     const selfA = (await nextSnap(a, (m) => m.self)).self;
     const selfB = (await nextSnap(b, (m) => m.self)).self;
-    assert.equal(selfA.cash + selfB.cash, cash.value);
+    assert.equal(selfA.cash, cash.value); assert.equal(selfB.cash, cash.value, 'cash is shared');
     assert.equal(selfA.phase, PHASE.COLLECT_CASH);
 
     // invalid requests do not grant anything

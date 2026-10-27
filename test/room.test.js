@@ -106,7 +106,7 @@ test('cash: $1-$4 values, gated by phase, duplicate claims rejected', () => {
   const a2 = room.handleAction(p, { type: 'pickup', id: c.id, reqId: 'a2' });
   assert.equal(a.ok, true); assert.equal(b.ok, false); assert.equal(a2.ok, false);
   assert.equal(p.cash, c.value);
-  assert.equal(p2.cash, 0);
+  assert.equal(p2.cash, c.value, 'cash is shared');
   // retry of the same request id returns the same result without paying twice
   assert.equal(room.handleAction(p, { type: 'pickup', id: c.id, reqId: 'a1' }).ok, true);
   assert.equal(p.cash, c.value);
@@ -246,6 +246,7 @@ test('playtime jump rope: start, early completion rejected, scissors cut it', ()
   assert.equal(room.handleAction(p, { type: 'use', slot: 1 }).ok, true);
   assert.equal(p.jump, null);
   assert.equal(pt.state, 'sad');
+  assert.ok(room.outbox.some((o) => o.ev.e === 'hush' && o.ev.src === 'playtime'), 'playtime stops talking');
   // proper completion
   room.startJumpRope(p, pt); pt.state = 'jumping';
   room.t += 6;
@@ -332,6 +333,14 @@ test('soda pushes AJAN away, scissors disable 1st Prize', () => {
   room.handleAction(p, { type: 'use', slot: 0, yaw: 0 }); // facing -z (north) toward AJAN
   for (let i = 0; i < 20; i++) room.tick(0.05);
   assert.ok(room.ajan.push || room.ajan.z < a.z - 6, 'AJAN pushed');
+  for (const id of ['bully', 'sweep', 'arts']) {
+    const n = room.npcById[id]; n.hidden = false; n.state = 'peek'; n.push = null;
+    n.x = a.x; n.z = a.z - 4;
+    p.inventory[0] = 'soda';
+    room.handleAction(p, { type: 'use', slot: 0, yaw: 0 });
+    for (let i = 0; i < 10; i++) room.tick(0.05);
+    assert.ok(n.push && n.push.until - room.t > 2.5, id + ' pushed far');
+  }
   const pr = room.npcById.prize;
   pr.x = a.x + 3; pr.z = a.z;
   p.inventory[1] = 'scissors';
@@ -475,4 +484,17 @@ test('exercise progress is shared by all players, including late joiners', () =>
   for (let i = 0; i < 7; i++) room.sharedEx.add(i);
   run(room, 4);
   for (const q of [p, p2, late]) assert.equal(q.phase, PHASE.COLLECT_CASH);
+});
+
+test('cash and calories are shared by every player, and the goal moves everyone on', () => {
+  const { room, p } = mk();
+  const q = room.addPlayer('p2', 'Two');
+  p.cash = 500;
+  assert.equal(q.cash, 500);
+  room.resetPlayer(q, true);
+  assert.equal(p.cash, 500, 'respawn keeps the team cash');
+  p.phase = q.phase = PHASE.COLLECT_CASH;
+  p.calories = CALORIE_GOAL;
+  room.tick(0.05);
+  assert.equal(q.phase, PHASE.FINAL_ESCAPE);
 });

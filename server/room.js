@@ -49,6 +49,7 @@ export class Room {
     // exercise progress is shared by every player in the match (late joiners get it too)
     this.sharedEx = new Set();
     this.coinGiven = false;
+    this.cash = 0; this.calories = 0; // cash and calories are shared by the whole team too
     this.ajan = new Ajan(this);
     this.npcs = [this.ajan, new Principal(this), new Playtime(this), new Bully(this), new Sweep(this), new Prize(this), new Arts(this), new Catboy(this)];
     this.timers = []; // delayed events (catboy betrayals)
@@ -113,8 +114,11 @@ export class Room {
     p.introUntil = this.t + 3;
     p.exercisesDone = this.sharedEx;
     p.pendingEx = new Map();
-    p.cash = 0;
-    p.calories = 0;
+    if (!('cash' in p)) {
+      const room = this;
+      const shared = (k) => ({ get: () => room[k], set: (v) => { room[k] = v; for (const o of room.players.values()) o.dirty = true; } });
+      Object.defineProperties(p, { cash: shared('cash'), calories: shared('calories') });
+    }
     p.purchases = [];
     p.inventory = new Array(INVENTORY_SLOTS).fill(null);
     p.selected = 0;
@@ -271,8 +275,7 @@ export class Room {
     const needy = [...this.players.values()].filter((p) => this.isActive(p) && (p.phase === PHASE.COLLECT_CASH || p.phase === PHASE.FAST_FOOD));
     if (!needy.length) return;
     const onMap = this.cashOnMap();
-    let need = 0;
-    for (const p of needy) need += Math.max(0, Math.ceil((CALORIE_GOAL - p.calories) / BEST_CAL_PER_CENT) - p.cash);
+    const need = Math.max(0, Math.ceil((CALORIE_GOAL - this.calories) / BEST_CAL_PER_CENT) - this.cash);
     if (onMap < need * 1.25) this.spawnCash(Math.ceil((need * 1.25 - onMap) / 230) + 1, needy[0]);
   }
 
@@ -330,6 +333,7 @@ export class Room {
     p.jump = null;
     p.dirty = true;
     this.npcById.playtime.endEncounter(how === 'cut');
+    if (how === 'cut') this.event({ e: 'hush', src: 'playtime' }); // cut rope: Playtime stops talking
     this.event({ e: 'jump_end', why: how }, p.id);
   }
 
@@ -660,7 +664,7 @@ export class Room {
     if (!this.chase) return { ok: false, err: 'The catboy just stares at you. "Mrrp?"' };
     if (Math.hypot(cb.x - p.x, cb.z - p.z) > 4.5) return { ok: false, err: 'Get closer.' };
     if (t < cb.cooldownUntil) return { ok: false, err: 'The catboy ignores you for now.' };
-    cb.cooldownUntil = t + 25;
+    cb.cooldownUntil = t + 40;
     cb.state = 'roam';
     if (this.rng() < 0.5) {
       // GOOD: an item drops next to him in the hallway
@@ -750,6 +754,7 @@ export class Room {
         if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
         if (this.setPhase(p, PHASE.COLLECT_CASH)) this.toast(p, 'All training done! Collect cash and buy 7,000 calories at KFC or Popeyes!');
       }
+      if ((p.phase === PHASE.COLLECT_CASH || p.phase === PHASE.FAST_FOOD) && p.calories >= CALORIE_GOAL) this.startFinal(p);
       if (p.detention && t >= p.detention.until) this.endDetention(p, 'time');
       if (p.jump && t - p.jump.start > 45) this.endJumpRope(p, 'timeout');
       if (p.phase === PHASE.FINAL_ESCAPE && p.calories >= CALORIE_GOAL) {
@@ -799,10 +804,10 @@ export class Room {
         if (segmentBlocked(this.map, o.x, o.z, nx, nz, solid) || t > o.until) return false;
         o.x = nx; o.z = nz;
         for (const n of this.npcs) {
-          if (!n.sodaPushable || n.hidden || o.hit.has(n.id)) continue;
+          if (n.hidden || o.hit.has(n.id)) continue;
           if (Math.hypot(n.x - o.x, n.z - o.z) < 1.9) {
             o.hit.add(n.id);
-            n.push = { vx: o.vx * 0.9, vz: o.vz * 0.9, until: t + 1.0 };
+            n.push = { vx: o.vx * 0.9, vz: o.vz * 0.9, until: t + 4.0 };
           }
         }
         return true;

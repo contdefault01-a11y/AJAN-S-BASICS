@@ -108,6 +108,15 @@ export class ExerciseRunner {
         this.render();
         return true;
       }
+      case 'math': case 'trivia': case 'trivia2': {
+        const n = /^Digit[1-3]$/.test(code) ? +code.slice(5) - 1 : -1;
+        if (n < 0) return false;
+        this.hits.push(n);
+        audio.play('pickup', { dedupe: false });
+        if (this.hits.length >= this.spec.questions.length) this.submit({ picks: this.hits.slice() });
+        this.render();
+        return true;
+      }
       default: {
         if (key !== 'E') return false;
         const s = this.spec.steps[this.stepIdx];
@@ -218,6 +227,13 @@ export class ExerciseRunner {
         $('xhud-zone').style.width = z.width * 100 + '%';
         $('xhud-needle').style.left = this.needle() * 100 + '%';
         prog.textContent = 'Batch ' + Math.min(this.hits.length + 1, 3) + ' / 3' + (this.misses ? '  (missed ' + this.misses + ')' : '');
+        break;
+      }
+      case 'math': case 'trivia': case 'trivia2': {
+        const q = this.spec.questions[Math.min(this.hits.length, this.spec.questions.length - 1)];
+        big.textContent = q.q;
+        big.style.fontSize = this.type === 'math' ? '' : '26px';
+        prog.textContent = q.choices.map((c, i) => (i + 1) + ') ' + c).join('     ') + '   (' + (this.hits.length + 1) + ' / 3)';
         break;
       }
       default: {
