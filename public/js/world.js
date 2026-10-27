@@ -202,6 +202,7 @@ export function buildWorld(map) {
   const pb = batch('props');
   const stationMeshes = [];
   const vendingMeshes = [];
+  let lockerTex = null;
   const registerMeshes = [];
   const box = (x0, y0, z0, x1, y1, z1, col) => pushBox(pb, x0, y0, z0, x1, y1, z1, col);
   for (const p of map.props) {
@@ -318,6 +319,24 @@ export function buildWorld(map) {
         mesh.userData = { kind: 'station', id: p.stationId, screen: scr };
         root.add(mesh);
         stationMeshes.push(mesh);
+        break;
+      }
+      case 'locker': {
+        // a tall red school locker with a vented door facing the hall
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, p.d), new THREE.MeshBasicMaterial({ color: '#b3121a' }));
+        mesh.position.set(p.x, p.h / 2, p.z);
+        lockerTex ??= toTex(canvas(64, 192, (g) => {
+          g.fillStyle = '#c8161f'; g.fillRect(0, 0, 64, 192);
+          g.strokeStyle = '#5a0508'; g.lineWidth = 4; g.strokeRect(4, 4, 56, 184);
+          g.fillStyle = '#3a0204';
+          for (let i = 0; i < 6; i++) g.fillRect(14, 14 + i * 9, 36, 4);
+          g.fillStyle = '#ddd'; g.fillRect(46, 90, 6, 18);
+        }), { repeat: false });
+        const front = new THREE.Mesh(new THREE.PlaneGeometry(1.3, p.h - 0.1), new THREE.MeshBasicMaterial({ map: lockerTex }));
+        front.position.set(p.nx * (p.w / 2 + 0.01), 0, p.nz * (p.d / 2 + 0.01));
+        front.rotation.y = Math.atan2(p.nx, p.nz);
+        mesh.add(front);
+        root.add(mesh);
         break;
       }
       case 'vending': {

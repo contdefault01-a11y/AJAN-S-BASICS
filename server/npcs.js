@@ -150,6 +150,7 @@ export class Npc {
   }
 
   canSee(p, maxD = 120) {
+    if (p.hiding) return false;
     const d = dist(this, p);
     if (d > maxD) return false;
     return lineOfSight(this.map, this.x, this.z, p.x, p.z, this.room.doors);
@@ -323,7 +324,7 @@ export class Principal extends Npc {
     if (this.applyPush(dt)) return;
     if (t >= this.thinkAt) {
       this.thinkAt = t + 0.15;
-      if (this.state !== 'chase' && this.state !== 'fetch') {
+      if (this.state === 'wander') {
         for (const p of room.players.values()) {
           if (!room.canInteract(p) || p.detention) continue;
           if (!this.canSee(p, 38)) continue;
@@ -331,20 +332,41 @@ export class Principal extends Npc {
           if (!violation) continue;
           if (t < (p.cd.principalWarn || 0)) continue;
           p.cd.principalWarn = t + 6;
-          this.state = 'chase';
+          this.state = violation === 'faculty' ? 'fetch' : 'chase';
           this.target = p.id;
           this.lostAt = t;
           this.chaseUntil = t + 25;
-          room.sfx('principal1', this, p.id);
+          room.sfx(violation === 'faculty' ? 'facu' : 'principal1', this, p.id);
           room.toast(p, violation === 'run' ? 'No running in the halls!' : 'Faculty only!');
           break;
         }
       }
     }
 
-    if (this.state === 'chase' || this.state === 'fetch') {
+    if (this.state === 'rescue') {
+      // the Bully took something: get it back and give it to its owner
       const p = room.players.get(this.target);
-      if (!p || !room.canInteract(p) || p.detention || t > this.chaseUntil) { this.state = 'wander'; this.target = null; return; }
+      if (!p || !room.isActive(p) || t > this.chaseUntil) { this.escortBully(); return; }
+      this.setGoal(p.x, p.z);
+      this.followPath(17 * dt);
+      if (dist(this, p) < 2.4) {
+        room.giveItem(p, this.item, 'The Principal got your ' + room.itemName(this.item) + ' back from the Bully!');
+        this.escortBully();
+      }
+    } else if (this.state === 'escort') {
+      // walk the Bully to the office; he follows right behind
+      const spot = room.map.detentionSpot;
+      this.setGoal(spot.x, spot.z);
+      this.followPath(8 * dt);
+      const b = room.npcById.bully;
+      if (dist(this, spot) < 3 || t > this.chaseUntil) {
+        b.relocate(60 + room.rng() * 30);
+        this.state = 'wander'; this.goal = null;
+      }
+    } else if (this.state === 'chase' || this.state === 'fetch') {
+      const p = room.players.get(this.target);
+      const reach = p && (room.canInteract(p) || (this.state === 'fetch' && p.hiding && room.chase));
+      if (!reach || p.detention || t > this.chaseUntil) { this.state = 'wander'; this.target = null; return; }
       if (this.canSee(p, 80) || this.state === 'fetch') this.lostAt = t;
       if (t - this.lostAt > 7) { this.state = 'wander'; this.target = null; return; }
       this.setGoal(p.x, p.z);
@@ -363,6 +385,20 @@ export class Principal extends Npc {
       this.followPath(6 * dt);
     }
     if (this.checkStuck(dt, true)) this.goal = null;
+  }
+
+  // seen the Bully steal: PRINBUL, then hurry over to hand the item back
+  rescue(p, item) {
+    if (this.state === 'rescue' || this.state === 'escort' || this.state === 'fetch') return false;
+    this.state = 'rescue'; this.target = p.id; this.item = item; this.chaseUntil = this.room.t + 25; this.goal = null;
+    this.room.sfx('prinbul', this, p.id);
+    return true;
+  }
+
+  escortBully() {
+    this.state = 'escort'; this.target = null; this.goal = null; this.chaseUntil = this.room.t + 40;
+    const b = this.room.npcById.bully;
+    if (b.state === 'caught') b.state = 'escorted';
   }
 }
 
@@ -500,6 +536,14 @@ export class Bully extends Npc {
   update(dt) {
     const room = this.room, t = room.t;
     if (this.state !== 'gone' && this.applyPush(dt)) return;
+    if (this.state === 'caught') return; // waits, busted, for the Principal
+    if (this.state === 'escorted') {
+      this.box = null;
+      const pr = room.npcById.principal;
+      if (pr.state !== 'escort') { this.relocate(45); return; }
+      if (dist(this, pr) > 2.2) { this.setGoal(pr.x, pr.z); this.followPath(9 * dt); }
+      return;
+    }
     if (this.state === 'gone') {
       if (t >= this.respawnAt) this.placeAt(this.pickSpot());
       return;
@@ -527,7 +571,9 @@ export class Bully extends Npc {
           p.dirty = true;
           room.sfx('bullytake', this, p.id);
           room.toast(p, 'The Bully took your ' + room.itemName(stolen) + '!');
-          this.relocate(45 + room.rng() * 30);
+          const pr = room.npcById.principal;
+          if (pr.canSee(this, 45) && pr.rescue(p, stolen)) this.state = 'caught';
+          else this.relocate(45 + room.rng() * 30);
         } else {
           p.cd.bullyTouch = t + 6;
           room.sfx('bullypass', this, p.id);
@@ -535,7 +581,7 @@ export class Bully extends Npc {
           if (!this.leaveAt) this.leaveAt = t + 8;
         }
         this.busy = false;
-        if (this.state === 'gone') return;
+        if (this.state === 'gone' || this.state === 'caught') return;
       }
     }
   }
@@ -669,6 +715,8 @@ export class Sweep extends Npc {
 
 // ------------------------------------------------------------------------------------------
 // 1st Prize: slow awkward turning, then a strong forward charge that shoves whatever it hits.
+const PRIZE_HALF = 1.9;
+
 export class Prize extends Npc {
   constructor(room) {
     super(room, 'prize', ...SPAWNS.prize, 1.0);
@@ -737,15 +785,15 @@ export class Prize extends Npc {
     if (!p || !room.canInteract(p)) { this.state = 'wander'; this.speed = 0; return; }
 
     if (this.state === 'turning') {
-      const off = this.turnToward(p.x, p.z, 0.9, dt);
-      if (off < 0.2) { this.state = 'charge'; this.chargeUntil = t + 7; this.speed = 0; }
+      const off = this.turnToward(p.x, p.z, 2.6, dt);
+      if (off < 0.25) { this.state = 'charge'; this.chargeUntil = t + 7; this.speed = 0; }
       else if (t > this.turnUntil) this.state = 'wander';
       return;
     }
 
     if (this.state === 'charge') {
-      this.turnToward(p.x, p.z, 0.45, dt);
-      this.speed = Math.min(21, this.speed + 18 * dt);
+      this.turnToward(p.x, p.z, 1.2, dt);
+      this.speed = Math.min(27, this.speed + 40 * dt);
       const f = fwd(this.yaw);
       const before = { x: this.x, z: this.z };
       // open doors in front
@@ -756,7 +804,8 @@ export class Prize extends Npc {
         if (!room.canInteract(pl) || pl.detention) continue;
         const dx = pl.x - this.x, dz = pl.z - this.z;
         const along = dx * f.x + dz * f.z;
-        if (Math.hypot(dx, dz) < 2.4 && along > -0.3) room.pushPlayer(pl, f.x * Math.max(this.speed, 8), f.z * Math.max(this.speed, 8), 0.3);
+        // he is huge now: anything in front of his body gets shoved
+        if (Math.hypot(dx, dz) < 3.6 && along > -0.3) room.pushPlayer(pl, f.x * Math.max(this.speed, 12), f.z * Math.max(this.speed, 12), 0.45);
       }
       if ((this.speed > 4 && moved < this.speed * dt * 0.3) || t > this.chargeUntil) {
         this.state = 'recover';
@@ -775,6 +824,8 @@ export class Prize extends Npc {
   snapshot() {
     const s = super.snapshot();
     if (this.state === 'disabled') s.v = 'off';
+    // his body fills most of the hall (the sprite spans ~90% of it); slip past on the sides
+    s.b = [this.x - PRIZE_HALF, this.x + PRIZE_HALF, this.z - PRIZE_HALF, this.z + PRIZE_HALF].map((v) => +v.toFixed(2));
     return s;
   }
 }

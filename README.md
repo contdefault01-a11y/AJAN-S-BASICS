@@ -56,19 +56,26 @@ ignores you until the chase has started; after that they are active and a bit fa
 
 ### Characters
 
-* **Principal** – no running in the halls, no students in the Faculty room → detention (always 20 s). AJAN is told where you are. Principal's Keys open the door early.
+* **Principal** – no running in the halls (`PRINCIPAL1`), no students in the Faculty room (`FACU`) →
+  detention (always 20 s, then he walks off muttering `pr1/pr2/pr3`). If he sees the Bully steal
+  from you (`PRINBUL`) he hurries over, hands the item back and marches the Bully to his office. AJAN is told where you are. Principal's Keys open the door early.
 * **Playtime** – 5-jump rope game (Space when the rope hits the floor). Scissors cut the rope.
 * **Bully** – blocks a hallway and takes one random item (`BULLYSEE/TAKE/PASS` – placeholders
   until supplied); with nothing to give he gets bored and leaves.
 * **Gotta Sweep** – bursts out of his closet with a school-wide `sweepout.wav`, rushes at anyone he
   sees (`sweep.wav`), very fast, and sometimes grabs you and drags you back to his closet.
-* **1st Prize** – turns slowly, charges and shoves you. Scissors cut his wires.
+* **1st Prize** – huge: he fills about 90% of the hallway, so slip past on the sides. Once he spots
+  you he turns and charges fast and shoves hard. Scissors cut his wires.
 * **Arts and Crafters** (the sock) – every now and then his `childmusic.wav` plays for the whole
   school; after your 7th exercise, staring at him makes him charge and teleport you.
 * The **Principal** also blows his `whistle.mp3` now and then – everyone hears it.
 * **Catboy** – roams slowly, mumbles (`CATBOYPASS/PASS2`, more often the closer you are), and may
   call you over (`CATBOYSEE`). Click him: 50% he drops an item next to him (`CATBOYGOOD`), 50% he
   snitches – AJAN (`CATBOYAJAN`) or the Principal (`CATBOYPRINCIPAL`) appears around the corner.
+
+**Red lockers** (8 in the hallways): click one to hide – no character can see or catch you. After
+10 seconds it starts shaking and throws you out, and you can't hide again for 40 seconds. If the
+Principal sees you climb in (`lock.mp3`) he pulls you out and gives you detention.
 
 In multiplayer, exercise progress, cash and calories are shared by every player in the room, including late joiners.
 
