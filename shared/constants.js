@@ -56,7 +56,7 @@ export const ITEMS = Object.freeze({
   soda:     { id: 'soda',     name: 'AJAN Cola',       desc: 'Sprays a fizzy blast that pushes characters away.' },
   keys:     { id: 'keys',     name: "Principal's Keys", desc: 'Unlocks the detention door early.' },
   bar:      { id: 'bar',      name: 'Protein Bar',     desc: 'Restores stamina (overfills to 200%).' },
-  lock:     { id: 'lock',     name: 'Swinging Door Lock', desc: 'Locks the door you look at for 15 seconds.' },
+  lock:     { id: 'lock',     name: 'Swinging Door Lock', desc: 'Locks the door you look at for 20 seconds.' },
   sneakers: { id: 'sneakers', name: 'Quiet Sneakers',  desc: 'For 30 seconds AJAN cannot hear doors you open.' },
   clock:    { id: 'clock',    name: 'Alarm Clock',     desc: 'Drop it: it rings after 5 seconds and lures AJAN.' },
   energy:   { id: 'energy',   name: 'Energy Drink',    desc: 'Unlimited sprint for 15 seconds.' },

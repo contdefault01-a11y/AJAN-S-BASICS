@@ -541,7 +541,7 @@ export class Bully extends Npc {
 
   snapshot() {
     const s = super.snapshot();
-    if (this.box) s.b = [this.box.x0, this.box.x1, this.box.z0, this.box.z1].map((v) => +v.toFixed(2));
+    if (this.box && this.room.chase && !this.hidden) s.b = [this.box.x0, this.box.x1, this.box.z0, this.box.z1].map((v) => +v.toFixed(2));
     return s;
   }
 }
