@@ -23,9 +23,10 @@ pausable one-player rooms), so always open the game through the server URL.
 
 ## Controls
 
-WASD move · mouse look · **Shift** run (uses stamina) · **left click / E** interact with doors,
+WASD move · mouse turns left/right only (no looking up or down – everything you can pick up or use
+is at eye height) · **hold Space** to look straight behind you · **Shift** run (uses stamina) · **left click / E** interact with doors,
 machines, pickups and restaurant counters · **right click / Q** use the selected item ·
-**1-3 / mouse wheel** select item · **Space** jump rope · **Esc** pause · **F3** debug overlay.
+**1-3 / mouse wheel** select item · **Space** jump rope (while Playtime has you) · **Esc** pause · **F3** debug overlay.
 During an exercise the keys it shows (E, G, letters, Space) belong to the exercise.
 
 ## How a run goes
@@ -60,9 +61,19 @@ ignores you until the chase has started; after that they are active and a bit fa
 * **Playtime** – 5-jump rope game (Space when the rope hits the floor). Scissors cut the rope.
 * **Bully** – blocks a hallway and takes one random item (`BULLYSEE/TAKE/PASS` – placeholders
   until supplied); with nothing to give he gets bored and leaves.
-* **Gotta Sweep** – sweeps everyone down the halls.
+* **Gotta Sweep** – bursts out of his closet with a school-wide `sweepout.wav`, rushes at anyone he
+  sees (`sweep.wav`), very fast, and sometimes grabs you and drags you back to his closet.
 * **1st Prize** – turns slowly, charges and shoves you. Scissors cut his wires.
-* **Arts and Crafters** – after your 7th exercise, staring at him makes him charge and teleport you.
+* **Arts and Crafters** (the sock) – every now and then his `childmusic.wav` plays for the whole
+  school; after your 7th exercise, staring at him makes him charge and teleport you.
+* The **Principal** also blows his `whistle.mp3` now and then – everyone hears it.
+
+### Getting caught / winning
+
+* Caught: the game freezes on the exact frame, a random `JUMPSCARE1-3.png` fills the bottom half of
+  the screen with a random (extremely loud) `jump1-3.wav`, then a black screen with a random picture
+  from `assets/random/` for 3 seconds, then the main menu.
+* Escaped: `WIN.wav` and the `congratulations.png` screen.
 
 ### Items
 
@@ -76,7 +87,7 @@ Everything lives in `/assets` and is used as-is:
 
 * Sprites: `AJAN.png`, `AJANBAD.png`, `PRINCIPAL.png`, `PLAYTIME.png`, `BULLY.png`, `SWEEP.png`,
   `PRIZE.png`, `ARTS.png` (camera-facing flat images, no shadows). Other players are flat 2D
-  pictures of a random kid.
+  pictures (`Male1.webp`). `flowerpot.webp` stands in random hallway corners.
 * `assets/random/`: item icons (scissors, quarter, BSODA, keys, zesty bar, door lock, BSED),
   cafeteria and restaurant food trays (`Food.webp`), desk clutter (notebooks, papers, pencils),
   globes, the EXIT sign and the school bus.

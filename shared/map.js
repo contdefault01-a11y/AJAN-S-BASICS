@@ -482,6 +482,30 @@ function buildProps(map) {
     }
   }
 
+  // flower pots in random hallway corners (two walls meeting, away from doors)
+  const corners = [];
+  for (const r of map.rooms) {
+    if (r.type !== 'hall' || r.id === 'hall_spawn') continue;
+    for (let z = r.z0; z <= r.z1; z++)
+      for (let x = r.x0; x <= r.x1; x++) {
+        if (!free(x, z) || map.room(x, z) !== r) continue;
+        const wall = (side) => map.edgeOf(x, z, side).t === E_WALL;
+        for (const [a, b2] of [['n', 'w'], ['n', 'e'], ['s', 'w'], ['s', 'e']])
+          if (wall(a) && wall(b2)) corners.push({ x, z, sx: b2 === 'w' ? -1 : 1, sz: a === 'n' ? -1 : 1 });
+      }
+  }
+  const potCells = new Set();
+  for (const c of rng.shuffle(corners)) {
+    if (potCells.size >= 14) break;
+    const key = c.x + ',' + c.z;
+    if (potCells.has(key)) continue;
+    potCells.add(key);
+    const p = cellCenter(c.x, c.z);
+    const px = p.x + c.sx * 0.65, pz = p.z + c.sz * 0.65;
+    sprites.push({ key: 'flowerpot', x: px, z: pz, y: 0, s: 2.8 });
+    addProp({ type: 'pot', x: px, z: pz, w: 0.8, d: 0.8, h: 1.2 });
+  }
+
   // REF1: an EXIT sign hangs over the entrance hall
   decals.push({ type: 'exitsign', key: 'exit', x: 48.5 * C, z: 66 * C, y: 6.3, nx: 0, nz: 1, w: 1.7, h: 1.7, hanging: true });
 

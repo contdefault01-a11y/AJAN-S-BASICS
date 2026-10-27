@@ -11,11 +11,11 @@ import { makeSolidTest, moveCircle, resolveCircle } from '/shared/collision.js';
 import { lineOfSight } from '/shared/nav.js';
 import { audio } from './audio.js';
 import { net } from './net.js';
-import { spriteTex, playerSpriteTex, labelTex, iconTex, iconDataURL, sprayTex, drawTimer } from './textures.js';
+import { spriteTex, labelTex, iconTex, iconDataURL, sprayTex, drawTimer } from './textures.js';
 import { ExerciseRunner } from './exercise.js';
 
 const $ = (id) => document.getElementById(id);
-const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize']);
+const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize', 'sweep', 'sweepout', 'whistle', 'childmusic']);
 const NPC_LOOK = {
   ajan: { img: 'AJAN', h: 5.6 }, principal: { img: 'PRINCIPAL', h: 5.0 }, playtime: { img: 'PLAYTIME', h: 4.1 },
   bully: { img: 'BULLY', h: 4.7 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 3.7 }, arts: { img: 'ARTS', h: 4.3 },
@@ -113,7 +113,7 @@ export class Game {
       if (Math.abs(e.movementX) > 400 || Math.abs(e.movementY) > 400 || performance.now() - this.lockedAt < 80) return;
       const s = this.app.settings.sens * 0.0022;
       this.me.yaw -= e.movementX * s;
-      this.me.pitch = Math.max(-1.2, Math.min(1.2, this.me.pitch - e.movementY * s));
+      // Classic controls: you can only turn left and right, never look up or down
     };
     this.onMouseDown = (e) => {
       if (this.ui || this.ended) return;
@@ -189,6 +189,8 @@ export class Game {
     for (const pk of this.pickups.values()) if (pk.data.kind === 'cash') pk.mesh.visible = cashVisible;
     if (phase === PHASE.INTRO && (prev === PHASE.CAUGHT || prev === PHASE.VICTORY)) {
       $('end').classList.add('hidden');
+      $('win').classList.add('hidden');
+      $('hud').classList.remove('hidden');
       this.ended = false;
       this.lock();
       this.updateMusic();
@@ -255,7 +257,7 @@ export class Game {
       seen.add(p.id);
       let r = this.remotes.get(p.id);
       if (!r) {
-        const st = playerSpriteTex(p.c, [...p.id].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) >>> 0);
+        const st = spriteTex('Male1'); // other players are a flat picture (Male1.webp)
         const mesh = makeBillboard(st.tex, st.aspect, 4.2);
         const label = makeBillboard(labelTex(p.n, p.c), 128 / 24, 0.6, 4.4);
         label.material.alphaTest = 0;
@@ -287,10 +289,11 @@ export class Game {
     if (this.pickups.has(p.id)) return;
     let mesh;
     if (p.kind === 'cash') {
-      mesh = makeBillboard(iconTex('cash'), 1, 1.0, (p.y || 0) + 0.15);
+      // everything you can pick up floats at eye height (you cannot look up or down)
+      mesh = makeBillboard(iconTex('cash'), 1, 1.0, EYE_H - 0.5);
       mesh.visible = [PHASE.COLLECT_CASH, PHASE.FAST_FOOD, PHASE.FINAL_ESCAPE].includes(this.self && this.self.phase);
     } else {
-      mesh = makeBillboard(iconTex(p.item), 1, 1.3, 0.7);
+      mesh = makeBillboard(iconTex(p.item), 1, 1.3, EYE_H - 0.65);
     }
     mesh.position.x = p.x; mesh.position.z = p.z;
     mesh.userData = { kind: 'pickup', id: p.id };
@@ -346,7 +349,6 @@ export class Game {
     const k = ev.k;
     const isMe = ev.to === this.id || ev.to === '*';
     if (ev.only && !isMe) return;
-    if (k === 'sweep') return; // the broom loop is driven by Gotta Sweep's state
     const spatial = !isMe && (ev.x || ev.z);
     if (!isMe && !spatial) return; // a private 2D sound meant for another player
     const voice = VOICE.has(k);
@@ -441,7 +443,7 @@ export class Game {
 
   // what the crosshair is pointing at (cone + range + line-of-sight)
   lookTarget() {
-    const f = fwd(this.me.yaw);
+    const f = fwd(this.viewYaw());
     const cands = [];
     const consider = (x, z, range, kind, data, cone = 0.82) => {
       const dx = x - this.me.x, dz = z - this.me.z;
@@ -509,10 +511,10 @@ export class Game {
     const slot = this.self.sel;
     const item = this.self.inv[slot];
     if (!item) return;
-    const msg = { slot, yaw: this.me.yaw };
+    const msg = { slot, yaw: this.viewYaw() };
     if (item === 'lock') {
       // nearest door in front of the player, open or closed
-      const f = fwd(this.me.yaw);
+      const f = fwd(this.viewYaw());
       let best = null, bd = 1e9;
       for (const d of this.map.doors) {
         const c = { x: d.x, z: d.z };
@@ -730,22 +732,32 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ end states
+  // AJAN got you: the game freezes on the exact frame you died, a random JUMPSCARE picture
+  // covers the lower half of the screen with a random (very loud) jump sound, then a black
+  // screen with a random picture from /assets/random for 3 seconds, then the main menu.
   caught() {
     this.ended = true;
+    this.frozen = true;
     if (this.ex) { this.ex.dispose(); this.ex = null; }
     this.updateMusic();
     this.endJump();
     this.closeUi(false);
     document.exitPointerLock();
+    audio.stopAll();
+    const n = 1 + Math.floor(Math.random() * 3);
+    $('scare-img').src = '/assets/JUMPSCARE' + n + '.png';
     $('scare').classList.remove('hidden');
-    audio.play('scare', { dedupe: false });
-    this.shake = 1.5;
+    $('hud').classList.add('hidden');
+    audio.play('jump' + (1 + Math.floor(Math.random() * 3)), { dedupe: false, volume: 1.6, bus: 'voice' });
+    audio.play('scare', { dedupe: false, volume: 1.2 });
+    const pics = this.app.randomImages || [];
     setTimeout(() => {
       $('scare').classList.add('hidden');
-      $('end-title').textContent = 'AJAN CAUGHT YOU!';
-      $('end-text').textContent = `You finished ${this.self.ex.length} of 7 exercises and ate ${this.self.cal.toLocaleString('en-US')} calories.`;
-      $('end').classList.remove('hidden');
-    }, 1300);
+      const card = $('deathcard');
+      $('deathcard-img').src = pics.length ? '/assets/random/' + pics[Math.floor(Math.random() * pics.length)] + '.webp' : '';
+      card.classList.remove('hidden');
+      setTimeout(() => { card.classList.add('hidden'); this.opts.onDeath(); }, 3000);
+    }, 2600);
   }
 
   victory() {
@@ -754,10 +766,10 @@ export class Game {
     this.updateMusic();
     this.closeUi(false);
     document.exitPointerLock();
-    audio.play('win', { dedupe: false });
-    $('end-title').textContent = 'YOU ESCAPED!';
-    $('end-text').textContent = `You survived AJAN'S BASICS with ${this.self.cal.toLocaleString('en-US')} calories in your belly and ${fmtCash(this.self.cash)} left over. Congratulations, trainee!`;
-    $('end').classList.remove('hidden');
+    audio.stopMusic();
+    audio.play('win', { dedupe: false, volume: 1.2 });
+    $('hud').classList.add('hidden');
+    $('win').classList.remove('hidden');
   }
 
   async restart() {
@@ -767,8 +779,12 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ per-frame
+  // Holding Space looks straight behind you (the body keeps facing forward).
+  lookingBack() { return this.keys.has('Space') && !this.jump && !this.ui && !this.ended && !(this.ex && this.ex.usesSpace); }
+  viewYaw() { return this.me.yaw + (this.lookingBack() ? Math.PI : 0); }
+
   sendMove() {
-    net.move({ x: +this.me.x.toFixed(3), z: +this.me.z.toFixed(3), yaw: +this.me.yaw.toFixed(3), sprint: this.sprinting, ts: this.me.ts });
+    net.move({ x: +this.me.x.toFixed(3), z: +this.me.z.toFixed(3), yaw: +this.viewYaw().toFixed(3), sprint: this.sprinting, ts: this.me.ts });
   }
 
   frame(dt) {
@@ -837,7 +853,7 @@ export class Game {
     const fov = this.app.settings.fov + this.fovKick;
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     this.camera.position.set(me.x + (Math.random() - 0.5) * sh * 0.5, EYE_H + hop + (Math.random() - 0.5) * sh * 0.6, me.z + (Math.random() - 0.5) * sh * 0.5);
-    this.camera.rotation.set(me.pitch + (Math.random() - 0.5) * sh * 0.04, me.yaw, (Math.random() - 0.5) * sh * 0.05, 'YXZ');
+    this.camera.rotation.set((Math.random() - 0.5) * sh * 0.04, this.viewYaw(), (Math.random() - 0.5) * sh * 0.05, 'YXZ');
     audio.setListener(me.x, me.z, me.yaw);
     audio.update();
 
@@ -853,8 +869,6 @@ export class Game {
       face(e.mesh);
       e.mesh.rotation.z = e.v === 'off' ? 0.5 : 0;
       e.mesh.material.color.set(e.v === 'sad' ? '#8fa8ff' : '#ffffff');
-      if (e.k === 'sweep' && !e.hidden && (e.state === 'sweeping' || e.state === 'return') && !audio.isPlaying('sweeploop'))
-        audio.play('sweep', { getPos: () => ({ x: e.x, z: e.z }), range: 60, dedupe: 'sweeploop', volume: 0.8 });
     }
     for (const r of this.remotes.values()) {
       r.mesh.visible = r.label.visible = r.visible;
@@ -949,7 +963,7 @@ export class Game {
     this.closeUi(false);
     this.endJump();
     this.scene.remove(this.dyn);
-    for (const id of ['hud', 'pause', 'end', 'scare', 'clicklock', 'netwarn']) $(id).classList.add('hidden');
+    for (const id of ['hud', 'pause', 'end', 'scare', 'clicklock', 'netwarn', 'win']) $(id).classList.add('hidden');
     $('toasts').innerHTML = '';
     this.app.postfx.target = 0;
     this.app.postfx.amount = 0;

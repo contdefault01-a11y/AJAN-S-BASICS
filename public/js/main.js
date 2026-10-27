@@ -11,6 +11,7 @@ import { Game, escapeHtml } from './game.js';
 const $ = (id) => document.getElementById(id);
 const IMAGES = ['AJAN', 'AJANBAD', 'PRINCIPAL', 'PLAYTIME', 'BULLY', 'SWEEP', 'PRIZE', 'ARTS', 'FACE1', 'FACE2', 'FACE3'];
 // supplied item / prop pictures in /assets/random (webp)
+const EXTRA_IMAGES = ['Male1', 'flowerpot']; // .webp in /assets
 const RANDOM_IMAGES = ['SafetyScissorsIcon_Large', 'QuarterIcon_Large', 'BSODA', 'KeyIcon_Large', 'ZestyBarIcon_Large', 'SwingingDoorLockIcon_Large', 'BBTimesAsset_bigicon_BSED', 'Food', 'Notebooks', 'Papers', 'Pencils', 'Globe', 'ExitSignSprite', 'Bus'];
 
 const DEFAULTS = { master: 0.8, music: 0.6, sfx: 0.9, sens: 1, fov: 65, lowres: false, shake: true, name: '' };
@@ -39,7 +40,7 @@ function loadImage(src) {
 }
 
 function setupRenderer() {
-  const r = new THREE.WebGLRenderer({ canvas: app.canvas, antialias: false, powerPreference: 'high-performance' });
+  const r = new THREE.WebGLRenderer({ canvas: app.canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
   r.outputColorSpace = THREE.SRGBColorSpace;
   app.renderer = r;
   app.scene = new THREE.Scene();
@@ -94,9 +95,11 @@ function backToMenu() {
   menuMusic();
 }
 
+let menuVoicePlayed = false;
 function menuMusic() {
   audio.playMusic('menu');
-  audio.play('menuvoice', { dedupe: 'menuvoice' });
+  // AJAN's menu line plays once per visit, never on repeat
+  if (!menuVoicePlayed) { menuVoicePlayed = true; audio.play('menuvoice', { dedupe: 'menuvoice' }); }
 }
 
 let optionsReturn = 'menu';
@@ -152,6 +155,8 @@ function bindMenus() {
   $('btn-quit').addEventListener('click', () => backToMenu());
   $('btn-again').addEventListener('click', () => app.game && app.game.restart());
   $('btn-end-menu').addEventListener('click', () => backToMenu());
+  $('btn-win-menu').addEventListener('click', () => backToMenu());
+  $('btn-win-again').addEventListener('click', () => { if (app.game && app.game.solo) { backToMenuQuiet(); startSession({ solo: true }); } else if (app.game) app.game.restart(); });
   $('clicklock').addEventListener('click', () => app.game && app.game.lock());
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && app.game && app.game.ui) { app.game.closeUi(false); app.game.pause(true); }
@@ -205,7 +210,10 @@ async function startSession({ solo, code }) {
   audio.stopMusic();
   audio.stop('menuvoice');
   if (app.game) app.game.dispose();
-  app.game = new Game(app, res.init, { onRestartSolo: () => { backToMenuQuiet(); startSession({ solo: true }); } });
+  app.game = new Game(app, res.init, {
+    onRestartSolo: () => { backToMenuQuiet(); startSession({ solo: true }); },
+    onDeath: () => backToMenu(),
+  });
   show('none');
   app.screen = 'game';
   app.game.lock();
@@ -240,10 +248,12 @@ async function boot() {
   let n = 0;
   await Promise.all([
     Promise.all(IMAGES.map(async (k) => { imgs[k] = await loadImage('/assets/' + k + '.png'); pImg = ++n / (IMAGES.length + RANDOM_IMAGES.length); prog(); })),
+    Promise.all(EXTRA_IMAGES.map(async (k) => { imgs[k] = await loadImage('/assets/' + k + '.webp'); })),
     Promise.all(RANDOM_IMAGES.map(async (k) => { imgs['random/' + k] = await loadImage('/assets/random/' + k + '.webp'); pImg = ++n / (IMAGES.length + RANDOM_IMAGES.length); prog(); })),
     audio.loadAll((p) => { pAud = p; prog(); }),
   ]);
   setImages(imgs);
+  app.randomImages = RANDOM_IMAGES.filter((k) => imgs['random/' + k]);
   $('load-text').textContent = 'Building the school...';
   await new Promise((r) => setTimeout(r, 30));
   buildStaticWorld();
@@ -258,7 +268,8 @@ function loop() {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     app.lastDt = dt;
-    if (app.game) {
+    // after a catch the game stays frozen on the exact frame you died
+    if (app.game && !app.game.frozen) {
       app.game.frame(dt);
       app.postfx.render(app.scene, app.camera, dt, now / 1000);
     }

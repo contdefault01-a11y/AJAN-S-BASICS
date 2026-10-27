@@ -177,7 +177,7 @@ export class Room {
     if (!ACTIVE_PHASES.has(p.phase)) return;
     const d = Math.hypot(x - p.x, z - p.z);
     const pushing = this.t < p.pushUntil + 0.5;
-    const maxD = ((pushing ? 22 : RUN_SPEED) * 1.35) * Math.min(dt, 0.5) + 0.8;
+    const maxD = ((pushing ? 34 : RUN_SPEED) * 1.35) * Math.min(dt, 0.5) + 0.8;
     let ok = d <= maxD;
     if (p.jump && Math.hypot(x - p.jump.x, z - p.jump.z) > 1.5) ok = false;
     if (ok) {
