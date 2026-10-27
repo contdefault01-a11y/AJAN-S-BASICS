@@ -5,7 +5,7 @@
 import { cellCenter } from '../shared/map.js';
 
 export const EXERCISE_TYPES = ['pushups', 'impossible', 'cones', 'order', 'fryer', 'mop', 'boxes'];
-export const RANDOM_TYPES = ['cones', 'order', 'fryer', 'mop', 'boxes'];
+export const RANDOM_TYPES = ['cones', 'fryer', 'math', 'trivia', 'trivia2'];
 
 export const EXERCISE_INFO = {
   pushups:    { title: 'PUSH-UPS',        blurb: 'Press the keys shown, alternating E and G, as fast as you can!' },
@@ -16,11 +16,40 @@ export const EXERCISE_INFO = {
   fryer:      { title: 'KITCHEN TIMING',  blurb: 'Press E when the needle is in the green zone, 3 times.' },
   mop:        { title: 'CLEAN-UP',        blurb: 'Walk to each spill and HOLD E to mop it up.' },
   boxes:      { title: 'BOX CARRY',       blurb: 'Pick up a box (E) and carry it to the shelf (E). 3 boxes.' },
+  math:       { title: 'QUICK MATH',      blurb: 'Press 1, 2 or 3 for the right answer. 3 questions.' },
+  trivia:     { title: 'TRIVIA',          blurb: 'Press 1, 2 or 3 for the right answer. 3 questions.' },
+  trivia2:    { title: 'TRIVIA 2',        blurb: 'Press 1, 2 or 3 for the right answer. 3 questions.' },
 };
 
 const KEYS = ['E', 'G', 'R', 'F', 'T', 'Q', 'C', 'V', 'X', 'Z'];
 const IMPOSSIBLE_KEYS = ['Ж', 'Ω', '¿', '§', 'ß'];
 const FOODS = ['burger', 'fries', 'soda', 'bucket', 'pie', 'nuggets'];
+const TRIVIA = [
+  ['How many legs does a spider have?', '8', '6', '10'],
+  ['What color is the sky on a clear day?', 'Blue', 'Green', 'Red'],
+  ['How many days are in a week?', '7', '5', '10'],
+  ['Which animal says "moo"?', 'Cow', 'Dog', 'Cat'],
+  ['What do bees make?', 'Honey', 'Milk', 'Bread'],
+  ['What is frozen water called?', 'Ice', 'Steam', 'Sand'],
+  ['How many months are in a year?', '12', '10', '14'],
+  ['Which planet do we live on?', 'Earth', 'Mars', 'Jupiter'],
+  ['What color are bananas when ripe?', 'Yellow', 'Purple', 'Blue'],
+  ['Which is the biggest?', 'Elephant', 'Mouse', 'Cat'],
+  ['What shape has 3 sides?', 'Triangle', 'Square', 'Circle'],
+  ['What do plants need from the sky?', 'Sunlight', 'Ketchup', 'Rocks'],
+  ['Which one is a fruit?', 'Apple', 'Carrot', 'Potato'],
+  ['How many wheels does a bicycle have?', '2', '3', '4'],
+  ['Which one can fly?', 'Bird', 'Fish', 'Snail'],
+];
+
+// 3 multiple-choice questions; choices are shuffled, solution = index of the right one
+function quiz(rng, questions) {
+  const qs = questions.map(([q, right, ...wrong]) => {
+    const choices = rng.shuffle([right, ...wrong]);
+    return { q, choices, a: choices.indexOf(right) };
+  });
+  return { spec: { type: null, time: 45, questions: qs.map(({ q, choices }) => ({ q, choices })) }, solution: qs.map((x) => x.a) };
+}
 
 function pickCells(rng, cells, n, minGap = 3) {
   const out = [];
@@ -76,6 +105,18 @@ export function generateExercise(type, rng, ctx = { cells: [[10, 10], [14, 10], 
       for (let i = 1; i <= 3; i++) steps.push({ ...pts[i], kind: 'box' }, { ...shelf, kind: 'shelf' });
       return { spec: { type, time: 60, steps }, solution: steps.length };
     }
+    case 'math': {
+      const qs = [];
+      for (let i = 0; i < 3; i++) {
+        const a = 2 + Math.floor(rng() * 9), b = 1 + Math.floor(rng() * 9), plus = rng() < 0.6 || a <= b;
+        const r = plus ? a + b : a - b;
+        qs.push([a + (plus ? ' + ' : ' - ') + b + ' = ?', String(r), String(r + 1), String(r + 2 + Math.floor(rng() * 2))]);
+      }
+      const g = quiz(rng, qs); g.spec.type = type; return g;
+    }
+    case 'trivia': case 'trivia2': {
+      const g = quiz(rng, rng.shuffle(TRIVIA.slice()).slice(0, 3)); g.spec.type = type; return g;
+    }
     default:
       throw new Error('unknown exercise type ' + type);
   }
@@ -125,6 +166,12 @@ export function validateExercise(type, solution, spec, answer, elapsed, pend = n
       }
       return { ok: true };
     }
+    case 'math': case 'trivia': case 'trivia2': {
+      const picks = Array.isArray(answer.picks) ? answer.picks : [];
+      if (elapsed < 1.5) return { ok: false, reason: 'Too fast to be real.' };
+      if (elapsed > spec.time + 3) return { ok: false, reason: "Time's up!" };
+      return picks.length === solution.length && picks.every((x, i) => x === solution[i]) ? { ok: true } : { ok: false, reason: 'Wrong answer!' };
+    }
     case 'cones': case 'order': case 'mop': case 'boxes': {
       if (!pend || pend.stepIdx < spec.steps.length) return { ok: false, reason: answer.timeout ? "Time's up!" : 'Not finished!' };
       if (elapsed > spec.time + 3) return { ok: false, reason: "Time's up!" };
@@ -141,6 +188,7 @@ export function solveExercise(type, spec, solution) {
     case 'pushups': return { answer: { count: solution } };
     case 'sequence': return { answer: { sequence: solution.slice() } };
     case 'impossible': return { answer: { sequence: solution.slice() } };
+    case 'math': case 'trivia': case 'trivia2': return { answer: { picks: solution.slice() } };
     case 'fryer': return { answer: { hits: solution.map((z) => z.start + z.width / 2) } };
     default: return { steps: spec.steps, answer: { done: true } };
   }

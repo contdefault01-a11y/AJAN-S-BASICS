@@ -444,7 +444,6 @@ export class Bully extends Npc {
   constructor(room) {
     super(room, 'bully', BULLY_SPOTS[0].x, BULLY_SPOTS[0].z, 0.8);
     this.pushable = false;
-    this.sodaPushable = false;
     this.state = 'block';
     this.box = null;
     this.relocateAt = 0;
@@ -498,8 +497,9 @@ export class Bully extends Npc {
     return spots[0];
   }
 
-  update() {
+  update(dt) {
     const room = this.room, t = room.t;
+    if (this.state !== 'gone' && this.applyPush(dt)) return;
     if (this.state === 'gone') {
       if (t >= this.respawnAt) this.placeAt(this.pickSpot());
       return;
@@ -553,7 +553,6 @@ export class Sweep extends Npc {
   constructor(room) {
     super(room, 'sweep', ...SPAWNS.sweep, 0.9);
     this.pushable = false;
-    this.sodaPushable = false;
     this.state = 'closet';
     this.nextSweep = 35 + room.rng() * 20;
     this.sweepUntil = 0;
@@ -566,6 +565,7 @@ export class Sweep extends Npc {
 
   update(dt) {
     const room = this.room, t = room.t;
+    if (this.state !== 'closet' && this.applyPush(dt)) return;
     if (this.state === 'closet') {
       this.vel = { x: 0, z: 0 };
       if (t >= this.nextSweep) {
@@ -785,7 +785,6 @@ export class Arts extends Npc {
   constructor(room) {
     super(room, 'arts', ...SPAWNS.arts, 0.8);
     this.pushable = false;
-    this.sodaPushable = false;
     this.state = 'hidden';
     this.hidden = true;
     this.nextPeek = 40 + room.rng() * 30;
@@ -817,6 +816,7 @@ export class Arts extends Npc {
     // the sock sometimes plays his creepy children's song for the whole school
     if (!this.nextSong) this.nextSong = t + 75 + room.rng() * 67;
     if (t >= this.nextSong) { this.nextSong = t + 100 + room.rng() * 100; room.sfx('childmusic', this, '*'); }
+    if (!this.hidden && this.applyPush(dt)) return;
 
     if (this.state === 'hidden') {
       this.hidden = true;

@@ -339,6 +339,7 @@ export class Game {
       case 'pk-': this.removePickup(ev.id); break;
       case 'jump_start': this.startJump(ev); break;
       case 'jump_end': this.endJump(ev.why); break;
+      case 'hush': for (const k of [...audio.playing.keys()]) if (k.startsWith('v:' + ev.src)) audio.stop(k); break;
       case 'caught': this.caught(); break;
       case 'victory': this.victory(); break;
       case 'phase': break;

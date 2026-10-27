@@ -29,7 +29,7 @@ function play(type, seed, station = 2) {
   return { spec, solution, pend, sol, v: validateExercise(type, solution, spec, sol.answer, t + 5, pend) };
 }
 
-for (const type of ['pushups', 'cones', 'order', 'fryer', 'mop', 'boxes']) {
+for (const type of ['pushups', 'cones', 'fryer', 'math', 'trivia', 'trivia2']) {
   test(`${type}: every randomized exercise can be completed, cheating fails`, () => {
     for (let seed = 1; seed <= 150; seed++) {
       const { spec, solution, pend, v } = play(type, seed, 2 + (seed % 5));

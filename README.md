@@ -42,9 +42,9 @@ During an exercise the keys it shows (E, G, letters, Space) belong to the exerci
    his shocked face (`FACE3.png`) in the corner, and he vanishes to the **cafeteria**. The chase
    is on: no music, just his `STOMP.mp3` steps (louder and heavier the closer he is, muffled far
    away, with camera shake). He hears doors being opened.
-4. **Exercises 3–7** (random order every match): cone sprint (run to each cone, E), order run
-   (grab 3 foods in order, bring them to the machine), kitchen timing (press E in the green zone),
-   clean-up (hold E on each spill), box carry (carry 3 boxes to the shelf). `music2.wav` replaces
+4. **Exercises 3–7** (random order every match): cone sprint (run to each cone, E), kitchen timing
+   (press E in the green zone), quick math and two easy trivia rounds (3 questions each, answer
+   with 1 / 2 / 3). `music2.wav` replaces
    any other music while an exercise runs. Leaving the room abandons it.
 5. **COLLECT_CASH / FAST_FOOD** – $1–$4 bills appear; buy 7,000 calories at KFC / Popeyes
    (north of the cafeteria). A full order costs about $20.
@@ -70,7 +70,7 @@ ignores you until the chase has started; after that they are active and a bit fa
   call you over (`CATBOYSEE`). Click him: 50% he drops an item next to him (`CATBOYGOOD`), 50% he
   snitches – AJAN (`CATBOYAJAN`) or the Principal (`CATBOYPRINCIPAL`) appears around the corner.
 
-In multiplayer, exercise progress is shared by every player in the room, including late joiners.
+In multiplayer, exercise progress, cash and calories are shared by every player in the room, including late joiners.
 
 ### Getting caught / winning
 
@@ -81,7 +81,7 @@ In multiplayer, exercise progress is shared by every player in the room, includi
 
 ### Items
 
-Safety Scissors, Shiny Quarter (vending machines), BSODA / AJAN Cola (push characters),
+Safety Scissors, Shiny Quarter (vending machines), BSODA / AJAN Cola (pushes any character far away),
 Principal's Keys, Zesty Protein Bar (stamina), Swinging Door Lock, Quiet Sneakers, Alarm Clock,
 BSED energy drink (unlimited sprint). Only a few items lie in hallways; most are in rooms.
 
