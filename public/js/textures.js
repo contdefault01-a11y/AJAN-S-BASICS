@@ -530,3 +530,53 @@ export function sprayTex() {
     for (let i = 0; i < 30; i++) { const a = r() * 6.283, d = Math.sqrt(r()) * 22; const s = 2 + (r() < 0.3 ? 2 : 0); g.fillRect(32 + Math.cos(a) * d, 32 + Math.sin(a) * d, s, s); }
   }), { repeat: false }));
 }
+
+// What a fake EXIT turns into: wall with cursed crayon drawings of smiling gorillas and the
+// school's characters staring with red eyes.
+export function cursedWallTex() {
+  return cached('cursed', () => toTex(canvas(128, 280, (g) => {
+    const brick = SURFACES.brick();
+    for (let y = 280; y > -128; y -= 128) g.drawImage(brick, 0, y - 128, 128, 128); // same brick scale as the walls
+    const r = seeded(666);
+    const faces = [];
+    const keys = ['AJAN', 'FACE3', 'PRINCIPAL', 'FACE1', 'BULLY', 'PLAYTIME', 'FACE2', 'ARTS', 'CATBOY', 'SWEEP'];
+    let i = 0;
+    for (let y = 6; y < 260; y += 50) {
+      for (let x = (i % 2) * 18 + 4; x < 112; x += 58) {
+        const img = getImage(keys[i++ % keys.length]);
+        const s = 40 + r() * 16;
+        if (img) {
+          g.save(); g.translate(x + s / 2, y + s / 2); g.rotate((r() - 0.5) * 0.5);
+          g.filter = 'grayscale(0.7) contrast(2) brightness(0.8)';
+          g.globalAlpha = 0.85;
+          const a = (img.width || 1) / (img.height || 1);
+          g.drawImage(img, -s * Math.min(1, a) / 2, -s / Math.max(1, a) / 2, s * Math.min(1, a), s / Math.max(1, a));
+          g.restore();
+        }
+        faces.push({ x: x + s / 2, y: y + s / 2, s });
+      }
+    }
+    // crayon over every picture: glowing red eyes and a wide grin
+    for (const f of faces) {
+      g.fillStyle = '#ff1010';
+      for (const ex of [-0.17, 0.17]) { g.beginPath(); g.arc(f.x + ex * f.s, f.y - 0.1 * f.s, 3.2, 0, 7); g.fill(); }
+      g.strokeStyle = '#c00000'; g.lineWidth = 2.5;
+      g.beginPath(); g.arc(f.x, f.y + 0.02 * f.s, 0.25 * f.s, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+      g.strokeStyle = '#300'; g.lineWidth = 1;
+      for (let t = -3; t <= 3; t++) { const a = Math.PI / 2 + t * 0.16; g.beginPath(); g.moveTo(f.x + Math.cos(a) * 0.2 * f.s, f.y + Math.sin(a) * 0.2 * f.s); g.lineTo(f.x + Math.cos(a) * 0.29 * f.s, f.y + Math.sin(a) * 0.29 * f.s); g.stroke(); }
+    }
+    // smiling crayon gorillas scribbled between them
+    for (let k = 0; k < 4; k++) {
+      const x = 16 + r() * 96, y = 20 + r() * 240;
+      g.strokeStyle = '#1a1a1a'; g.lineWidth = 2;
+      g.beginPath(); g.arc(x, y, 11, 0, 7); g.stroke();
+      g.beginPath(); g.arc(x - 9, y - 7, 4, 0, 7); g.arc(x + 9, y - 7, 4, 0, 7); g.stroke();
+      g.fillStyle = '#ff0000'; g.fillRect(x - 5, y - 3, 3, 3); g.fillRect(x + 2, y - 3, 3, 3);
+      g.strokeStyle = '#c00000'; g.beginPath(); g.arc(x, y + 2, 6, 0.1 * Math.PI, 0.9 * Math.PI); g.stroke();
+    }
+    g.fillStyle = '#b00000'; g.font = 'bold 15px Comic Sans MS, sans-serif';
+    g.save(); g.translate(64, 140); g.rotate(-0.12); g.textAlign = 'center';
+    g.fillText('NO WAY OUT', 0, 0); g.fillText('GO BACK', 4, 100);
+    g.restore();
+  }), { repeat: false }));
+}

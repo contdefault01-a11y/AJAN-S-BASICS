@@ -549,7 +549,7 @@ function buildProps(map) {
   map.vending = VENDING;
 
   for (const e of map.exits)
-    decals.push({ type: 'exitsign', key: 'exit', x: e.wx - e.nx * OFF, z: e.wz - e.nz * OFF, y: 6.2, nx: -e.nx, nz: -e.nz, w: 1.6, h: 1.6 });
+    decals.push({ type: 'exitsign', key: 'exit', x: e.wx - e.nx * OFF, z: e.wz - e.nz * OFF, y: 6.2, nx: -e.nx, nz: -e.nz, w: 1.6, h: 1.6, exit: e.id });
 
   const onFloor = (s) => { const c = worldToCell(s.x, s.z); return map.isFloor(c.cx, c.cz); };
   map.props = props;

@@ -161,22 +161,27 @@ test('a full order of about $20 reaches 7,000 calories', () => {
   assert.ok(best[n] >= 1800, 'not trivially cheap: ' + best[n]);
 });
 
-test('victory only at an exit and only after 7,000 calories', () => {
+test('final escape: only the front entrance wins; fake EXITs turn into cursed walls', () => {
   const { room, p } = mk();
   const e = room.map.exits[0];
   const c = { x: e.wx - e.nx * 1.0, z: e.wz - e.nz * 1.0 };
-  place(room, p, c.x, c.z);
+  const garden = room.map.roomById.garden;
+  const g = cellCenter(48, garden.z0 + 1);
+  place(room, p, g.x, g.z);
   p.phase = PHASE.FAST_FOOD;
   run(room, 0.5);
-  assert.equal(p.phase, PHASE.FAST_FOOD);
+  assert.equal(p.phase, PHASE.FAST_FOOD, 'no escape before 7,000 calories');
   p.calories = CALORIE_GOAL;
   room.startFinal(p);
-  place(room, p, 50, 150);
-  run(room, 0.3);
-  assert.equal(p.phase, PHASE.FINAL_ESCAPE, 'not near an exit');
   place(room, p, c.x, c.z);
   run(room, 0.3);
-  assert.equal(p.phase, PHASE.VICTORY);
+  assert.equal(p.phase, PHASE.FINAL_ESCAPE, 'an EXIT door is not a way out');
+  assert.ok(room.cursedExits.has(e.id), 'the fake exit turned into a cursed wall');
+  assert.ok(room.outbox.some((o) => o.ev.e === 'cursed' && o.ev.id === e.id));
+  assert.deepEqual(room.selfState(p).cursed, [e.id]);
+  place(room, p, g.x, g.z);
+  run(room, 0.3);
+  assert.equal(p.phase, PHASE.VICTORY, 'out the front doors to the bus');
 });
 
 test('movement validation rejects teleports and walking through walls', () => {

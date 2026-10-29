@@ -72,6 +72,7 @@ export class Game {
     $('hud').classList.remove('hidden');
     $('debug').classList.toggle('hidden', !this.debug);
     this.world.setExitsOpen(false);
+    this.world.setCursed(init.self.cursed || []);
   }
 
   applyInit(init) {
@@ -182,6 +183,7 @@ export class Game {
     if (!initial && s.story === 'chase' && !this.chaseShown) this.onChase();
     if (!initial && s.furious && this.baseMusic !== 'musicescape') { this.baseMusic = 'musicescape'; this.updateMusic(); }
     this.world.setExitsOpen(s.phase === PHASE.FINAL_ESCAPE);
+    this.world.setCursed(s.cursed || []);
     this.updateHud();
   }
 
@@ -344,6 +346,7 @@ export class Game {
         break;
       case 'correct': this.me.x = ev.x; this.me.z = ev.z; this.me.vx = this.me.vz = 0; break;
       case 'unhide': if (ev.thrown) { this.shake = 1; this.app.postfx.flash = 0.3; } audio.play('door', { dedupe: false }); break;
+      case 'cursed': this.app.postfx.flash = 0.5; this.shake = Math.max(this.shake, 0.6); audio.play('fail', { dedupe: false }); break;
       case 'push': this.me.push = { vx: ev.vx, vz: ev.vz, until: this.time + ev.d }; break;
       case 'stamina': this.me.stamina = Math.max(this.me.stamina, ev.v); break;
       case 'pk+': this.addPickup(ev.p); break;
@@ -421,7 +424,7 @@ export class Game {
       TRAINING: 'Find the training exercises: ' + (EXERCISE_COUNT - s.ex.length) + ' left',
       COLLECT_CASH: 'Collect cash, then buy food at KFC or Popeyes (north of the Cafeteria)',
       FAST_FOOD: 'Buy food at the counter: ' + Math.max(0, CALORIE_GOAL - s.cal).toLocaleString('en-US') + ' calories to go',
-      FINAL_ESCAPE: 'GET OUT! RUN TO AN EXIT!',
+      FINAL_ESCAPE: 'GET OUT! RUN TO THE FRONT DOORS (WHERE YOU STARTED)!',
       CAUGHT: 'Caught!', VICTORY: 'You escaped!',
     }[s.phase] || '';
     this.updateInventory();

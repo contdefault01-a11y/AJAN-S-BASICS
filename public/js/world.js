@@ -5,8 +5,7 @@ import { CELL, WALL_H } from '/shared/constants.js';
 import { E_WALL, E_WINDOW, E_DOOR, E_EXIT, WALL_T, cellCenter } from '/shared/map.js';
 import {
   surfaceTex, doorTex, exitTex, signTex, chalkboardTex, posterTex, menuBoardTex, stationTex,
-  vendingTex, timerCanvas, drawTimer, iconTex, imageTex, getImage, toTex, canvas,
-} from './textures.js';
+  vendingTex, timerCanvas, drawTimer, iconTex, imageTex, getImage, toTex, canvas, cursedWallTex } from './textures.js';
 
 const ZONE = {
   hall: { wall: 'brick', floor: 'carpet', ceil: 'ceiling' },
@@ -179,7 +178,13 @@ export function buildWorld(map) {
       m.position.set((e.x0 + e.x1) / 2 + nx * 0.02, DOOR_H / 2, (e.z0 + e.z1) / 2 + nz * 0.02);
       m.rotation.y = Math.atan2(nx, nz);
       root.add(m);
-      exitMeshes.push({ mesh: m, exit: ex });
+      // the cursed wall that replaces it when you get close in the final escape
+      const cm = new THREE.Mesh(new THREE.PlaneGeometry(CELL, DOOR_H + 0.6), new THREE.MeshBasicMaterial({ map: cursedWallTex() }));
+      cm.position.set(m.position.x + nx * 0.02, (DOOR_H + 0.6) / 2, m.position.z + nz * 0.02);
+      cm.rotation.y = m.rotation.y;
+      cm.visible = false;
+      root.add(cm);
+      exitMeshes.push({ mesh: m, cursed: cm, exit: ex, signs: [] });
     }
   }
 
@@ -439,6 +444,7 @@ export function buildWorld(map) {
       root.add(back);
     }
     else if (dc.type === 'exitsign') m.material.alphaTest = 0.5;
+    if (dc.exit != null) { const em = exitMeshes.find((x) => x.exit.id === dc.exit); if (em) em.signs.push(m); }
     root.add(m);
   }
 
@@ -463,6 +469,14 @@ export function buildWorld(map) {
   return {
     root, doorMeshes, stationMeshes, vendingMeshes, registerMeshes, exitMeshes, occluders, timer,
     setExitsOpen(open) { for (const e of exitMeshes) e.mesh.material.map = exitTex(open); },
+    setCursed(ids) {
+      for (const e of exitMeshes) {
+        const c = ids.includes(e.exit.id);
+        e.cursed.visible = c;
+        e.mesh.visible = !c;
+        for (const s of e.signs) s.visible = !c;
+      }
+    },
     setStation(id, type, done) {
       const m = stationMeshes.find((s) => s.userData.id === id);
       if (m) { m.userData.screen.material.map = stationTex(type, done, id + 1); m.userData.screen.material.needsUpdate = true; }

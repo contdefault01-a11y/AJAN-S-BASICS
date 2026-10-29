@@ -49,6 +49,7 @@ export class Room {
     // exercise progress is shared by every player in the match (late joiners get it too)
     this.sharedEx = new Set();
     this.coinGiven = false;
+    this.cursedExits = new Set(); // fake EXIT doors that turned into cursed walls
     this.cash = 0; this.calories = 0; // cash and calories are shared by the whole team too
     this.ajan = new Ajan(this);
     this.npcs = [this.ajan, new Principal(this), new Playtime(this), new Bully(this), new Sweep(this), new Prize(this), new Arts(this), new Catboy(this)];
@@ -157,7 +158,7 @@ export class Room {
       jump: p.jump ? { period: p.jump.period, need: p.jump.need } : null,
       quiet: Math.max(0, p.quietUntil - this.t), energy: Math.max(0, p.energyUntil - this.t),
       furious: this.furious, officeDoor: this.officeDoor, stations: this.stationTypes, story: this.story, coin: !!p.gotAjanCoin,
-      solo: this.solo, code: this.code,
+      solo: this.solo, code: this.code, cursed: [...this.cursedExits],
     };
   }
 
@@ -771,7 +772,7 @@ export class Room {
 
   startFinal(p) {
     if (!this.setPhase(p, PHASE.FINAL_ESCAPE)) return;
-    this.toast(p, '7,000 CALORIES! AJAN IS FURIOUS! GET TO AN EXIT!');
+    this.toast(p, '7,000 CALORIES! AJAN IS FURIOUS! GET OUT THROUGH THE FRONT DOORS!');
     this.event({ e: 'phase', phase: p.phase }, p.id);
     if (!this.furious) {
       this.furious = true;
@@ -801,13 +802,20 @@ export class Room {
       if (p.hiding && t >= p.hiding.until) this.leaveLocker(p, true);
       if (p.jump && t - p.jump.start > 45) this.endJumpRope(p, 'timeout');
       if (p.phase === PHASE.FINAL_ESCAPE && p.calories >= CALORIE_GOAL) {
+        // the only way out is the front entrance (where the match started), out to the bus
+        const r = this.map.room(...Object.values(worldToCell(p.x, p.z)));
+        if (r && r.type === 'garden') {
+          this.setPhase(p, PHASE.VICTORY);
+          this.event({ e: 'victory' }, p.id);
+          for (const o of this.players.values()) if (o !== p) this.toast(o, p.name + ' escaped!');
+        }
+        // the other EXIT doors are a lie: get close and they turn into a cursed wall
         for (const e of this.map.exits) {
-          if (Math.hypot(e.wx - p.x, e.wz - p.z) < CELL * 0.9) {
-            this.setPhase(p, PHASE.VICTORY);
-            this.event({ e: 'victory' }, p.id);
-            for (const o of this.players.values()) if (o !== p) this.toast(o, p.name + ' escaped!');
-            break;
-          }
+          if (this.cursedExits.has(e.id) || Math.hypot(e.wx - p.x, e.wz - p.z) > 9) continue;
+          this.cursedExits.add(e.id);
+          this.event({ e: 'cursed', id: e.id });
+          this.toast(p, 'The door... is gone. Only the front entrance is real!');
+          for (const o of this.players.values()) o.dirty = true;
         }
       }
       if (p.phase === PHASE.COLLECT_CASH) {
