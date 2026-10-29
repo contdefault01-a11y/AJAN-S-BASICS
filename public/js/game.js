@@ -876,6 +876,9 @@ export class Game {
     $('scare-img').src = '/assets/JUMPSCARE' + n + '.png';
     $('scare').classList.remove('hidden');
     $('hud').classList.add('hidden');
+    // only the jumpscare picture of AJAN: hide his in-world sprite and redraw the frozen frame once
+    const aj = this.npcs.get('ajan');
+    if (aj) { aj.mesh.visible = false; this.app.postfx.render(this.app.scene, this.app.camera, 0, performance.now() / 1000); }
     audio.play('jump' + (1 + Math.floor(Math.random() * 3)), { dedupe: false, volume: 0.8, bus: 'voice' });
     audio.play('scare', { dedupe: false, volume: 1.2 });
     const pics = this.app.randomImages || [];

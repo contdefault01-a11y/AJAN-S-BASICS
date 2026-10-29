@@ -651,3 +651,16 @@ test('arts and crafters in the red chase: passing him spins the socks around you
   }
   assert.ok(teleports > 18 && teleports < 38, 'about 70%: ' + teleports + '/40');
 });
+
+test('the car appears pointing along the hallway it drives down', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const { room } = mk(seed);
+    room.furious = true;
+    const car = room.npcById.car;
+    car.update(0.05);
+    const f = { x: -Math.sin(car.yaw), z: -Math.cos(car.yaw) };
+    // a few units ahead of its nose is still floor (not a wall across the hall)
+    const c = { cx: Math.floor((car.x + f.x * 3) / 2.5), cz: Math.floor((car.z + f.z * 3) / 2.5) };
+    assert.ok(room.map.isFloor(c.cx, c.cz), 'seed ' + seed);
+  }
+});
