@@ -275,7 +275,7 @@ export class Ajan extends Npc {
       const iv = this.interval();
       this.nextStomp = t + iv;
       this.lungeUntil = t + Math.min(0.26, iv * 0.6);
-      this.lungeSpeed = 4.5 / Math.min(0.26, iv * 0.6); // 4.5 units per stomp
+      this.lungeSpeed = 4.05 / Math.min(0.26, iv * 0.6); // 4.05 units per stomp
       this.stompCount++;
       room.event({ e: 'stomp', x: +this.x.toFixed(1), z: +this.z.toFixed(1), f: room.furious ? 1 : 0 });
     }
