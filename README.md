@@ -48,8 +48,10 @@ During an exercise the keys it shows (E, G, letters, Space) belong to the exerci
    any other music while an exercise runs. Leaving the room abandons it.
 5. **COLLECT_CASH / FAST_FOOD** – $1–$4 bills appear; buy 7,000 calories at KFC / Popeyes
    (north of the cafeteria). A full order costs about $20.
-6. **FINAL_ESCAPE** – the screen turns red, `musicescape.wav` loops, AJAN goes berserk. Reach one
-   of the four corner EXITs (**VICTORY**).
+6. **FINAL_ESCAPE** – the screen turns red, `musicescape.wav` loops, AJAN goes berserk. The only way
+   out is the front entrance where you started: out to the garden and the school bus (**VICTORY**).
+   The four corner EXIT doors are fakes – get close and they vanish into a wall covered in cursed
+   drawings of grinning gorillas and red-eyed characters.
 
 Everyone except AJAN (Principal, Playtime, Bully, Gotta Sweep, 1st Prize, Arts and Crafters)
 ignores you until the chase has started; after that they are active and a bit faster than before.
