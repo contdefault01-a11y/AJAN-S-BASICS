@@ -21,6 +21,7 @@ const NPC_LOOK = {
   bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 6.7 }, arts: { img: 'ARTS', h: 4.3 },
 };
 const FACES = ['FACE1', 'FACE2', 'FACE3'];
+const MAD_LEN = 3.7; // seconds of AJANMAD.mp3
 const ACTIVE = new Set([PHASE.INTRO, PHASE.TRAINING, PHASE.COLLECT_CASH, PHASE.FAST_FOOD, PHASE.FINAL_ESCAPE]);
 const fwd = (yaw) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 
@@ -179,7 +180,6 @@ export class Game {
     }
     if (s.phase !== this.lastPhase) this.onPhase(s.phase, this.lastPhase);
     this.lastPhase = s.phase;
-    this.app.postfx.target = s.furious ? 1 : 0;
     if (!initial && s.story === 'chase' && !this.chaseShown) this.onChase();
     if (!initial && s.furious && this.baseMusic !== 'musicescape') { this.baseMusic = 'musicescape'; this.updateMusic(); }
     this.world.setExitsOpen(s.phase === PHASE.FINAL_ESCAPE);
@@ -335,7 +335,7 @@ export class Game {
       }
       case 'ajan_angry': this.app.postfx.flash = 0.6; this.shake = 0.8; break;
       case 'chase': this.onChase(); break;
-      case 'mad': this.app.postfx.flash = 1; this.shake = 1; this.toast('AJAN IS FURIOUS!', 'money'); this.baseMusic = 'musicescape'; this.updateMusic(); break;
+      case 'mad': this.redAt = this.time + MAD_LEN; this.toast('AJAN IS FURIOUS!', 'money'); // red + shaking start when his AJANMAD line ends this.baseMusic = 'musicescape'; this.updateMusic(); break;
       case 'face': if (this.time - this.lastFaceT > 1) this.showFace(); break;
       case 'toast': this.toast(ev.text); break;
       case 'cash': this.toast('+' + fmtCash(ev.v), 'money'); audio.play('cash', { dedupe: false }); break;
@@ -874,7 +874,11 @@ export class Game {
 
     // ---- camera
     this.shake = Math.max(0, this.shake - dt * 2.2);
-    if (this.self.furious && !this.ended && this.app.settings.shake) this.shake = Math.max(this.shake, 0.85); // the ground never stops shaking
+    const red = !!this.self.furious && !this.ended && this.time >= (this.redAt || 0);
+    if (red && !this.wasRed) { this.app.postfx.flash = 1; this.shake = 1; }
+    this.wasRed = red;
+    this.app.postfx.target = red ? 1 : 0;
+    if (red && this.app.settings.shake) this.shake = Math.max(this.shake, 0.85); // the ground never stops shaking
     const sh = this.shake * this.shake;
     const hop = (this.jump ? Math.sin(this.jump.hop * Math.PI) * 1.2 : 0) - (this.dip || 0) * 1.4;
     this.dip = Math.max(0, (this.dip || 0) - dt * 6);
