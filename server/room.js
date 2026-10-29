@@ -779,6 +779,28 @@ export class Room {
     for (const o of this.players.values()) o.dirty = true;
   }
 
+  // Out the front doors to the bus. In multiplayer everyone still in the game must be out there
+  // at the same time; then they all escape together.
+  tryEscape(p) {
+    const team = [...this.players.values()].filter((o) => this.isActive(o));
+    const inGarden = (o) => { const r = this.map.room(...Object.values(worldToCell(o.x, o.z))); return r && r.type === 'garden'; };
+    if (!this.solo && team.length > 1) {
+      const waiting = team.filter((o) => !(o.phase === PHASE.FINAL_ESCAPE && inGarden(o)));
+      if (waiting.length) {
+        if (this.t >= (p.cd.escapeWait || 0)) {
+          p.cd.escapeWait = this.t + 4;
+          this.toast(p, 'All players must be here to escape! Waiting for: ' + waiting.map((o) => o.name).join(', '));
+        }
+        return;
+      }
+    }
+    for (const o of team.length > 1 && !this.solo ? team : [p]) {
+      this.setPhase(o, PHASE.VICTORY);
+      this.event({ e: 'victory' }, o.id);
+    }
+    if (this.solo || team.length <= 1) for (const o of this.players.values()) if (o !== p) this.toast(o, p.name + ' escaped!');
+  }
+
   startFinal(p) {
     if (!this.setPhase(p, PHASE.FINAL_ESCAPE)) return;
     this.toast(p, '7,000 CALORIES! AJAN IS FURIOUS! GET OUT THROUGH THE FRONT DOORS!');
@@ -813,11 +835,7 @@ export class Room {
       if (p.phase === PHASE.FINAL_ESCAPE && p.calories >= CALORIE_GOAL) {
         // the only way out is the front entrance (where the match started), out to the bus
         const r = this.map.room(...Object.values(worldToCell(p.x, p.z)));
-        if (r && r.type === 'garden') {
-          this.setPhase(p, PHASE.VICTORY);
-          this.event({ e: 'victory' }, p.id);
-          for (const o of this.players.values()) if (o !== p) this.toast(o, p.name + ' escaped!');
-        }
+        if (r && r.type === 'garden') this.tryEscape(p);
         // the other EXIT doors are a lie: get close and they turn into a cursed wall
         for (const e of this.map.exits) {
           if (this.cursedExits.has(e.id) || Math.hypot(e.wx - p.x, e.wz - p.z) > 9) continue;

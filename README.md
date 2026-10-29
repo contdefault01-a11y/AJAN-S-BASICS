@@ -50,6 +50,7 @@ During an exercise the keys it shows (E, G, letters, Space) belong to the exerci
    (north of the cafeteria). A full order costs about $20.
 6. **FINAL_ESCAPE** – the whole screen turns deep red and the ground shakes without pause, `musicescape.wav` loops, AJAN goes berserk. The only way
    out is the front entrance where you started: out to the garden and the school bus (**VICTORY**).
+   In multiplayer everyone still playing must be out there at the same time to escape together.
    The four corner EXIT doors are fakes – get close and they vanish into a stretch of wall covered
    in cursed drawings (giant grinning gorillas, red-eyed characters, scribbles, eyes) – different on each.
 

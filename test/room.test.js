@@ -588,3 +588,23 @@ test('catboy on the cash hunt: 25% a $10 bill, 25% an item, 50% betrayal', () =>
   assert.ok(counts.good > 60 && counts.good < 140, 'item ~25%: ' + counts.good);
   assert.ok(counts.ajan + counts.principal > 150, 'bad ~50%');
 });
+
+test('multiplayer escape: everyone must be out the front doors at the same time', () => {
+  const { room, p } = mk();
+  const q = room.addPlayer('p2', 'Two');
+  p.phase = q.phase = PHASE.FAST_FOOD;
+  p.calories = CALORIE_GOAL;
+  room.startFinal(p); room.startFinal(q);
+  assert.equal(q.phase, PHASE.FINAL_ESCAPE);
+  const g = cellCenter(48, room.map.roomById.garden.z0 + 1);
+  place(room, p, g.x, g.z);
+  place(room, q, 50, 150);
+  room.outbox.length = 0;
+  run(room, 0.5);
+  assert.equal(p.phase, PHASE.FINAL_ESCAPE, 'cannot escape alone');
+  assert.ok(room.outbox.some((o) => o.ev.e === 'toast' && /All players must be here/.test(o.ev.text)));
+  place(room, q, g.x + 1, g.z);
+  run(room, 0.2);
+  assert.equal(p.phase, PHASE.VICTORY);
+  assert.equal(q.phase, PHASE.VICTORY);
+});
