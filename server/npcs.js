@@ -1043,6 +1043,11 @@ export class Car extends Npc {
       this.x = best.x; this.z = best.z;
       this.hidden = false;
       this.state = 'roam';
+      // point down the hallway toward where it will drive, never sideways across it
+      const g = this.randomHallGoal(25);
+      this.setGoal(g.x, g.z, true);
+      const wp = (this.path || []).find((w) => Math.hypot(w.x - this.x, w.z - this.z) > 1.5) || g;
+      this.yaw = yawTo(wp.x - this.x, wp.z - this.z);
     }
     if (this.applyPush(dt)) return;
     if (t >= this.thinkAt) {
