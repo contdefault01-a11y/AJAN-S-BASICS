@@ -567,3 +567,24 @@ test('principal: FACU in the faculty room, PRINBUL + item returned when he sees 
   room.tick(0.05); room.tick(0.2);
   assert.ok(room.outbox.some((o) => o.ev.k === 'facu'));
 });
+
+test('catboy on the cash hunt: 25% a $10 bill, 25% an item, 50% betrayal', () => {
+  const { room, p } = mk();
+  room.startChase(p);
+  p.phase = PHASE.COLLECT_CASH;
+  const cb = room.npcById.catboy;
+  const counts = { cash: 0, good: 0, ajan: 0, principal: 0 };
+  for (let i = 0; i < 400; i++) {
+    cb.cooldownUntil = 0;
+    place(room, p, cb.x + 2, cb.z);
+    const before = room.pickups.size;
+    const r = room.handleAction(p, { type: 'catboy' });
+    counts[r.outcome]++;
+    if (r.outcome === 'cash') assert.equal([...room.pickups.values()].at(-1).value, 1000);
+    if (r.outcome === 'cash' || r.outcome === 'good') assert.equal(room.pickups.size, before + 1);
+    room.timers.length = 0;
+  }
+  assert.ok(counts.cash > 60 && counts.cash < 140, 'cash ~25%: ' + counts.cash);
+  assert.ok(counts.good > 60 && counts.good < 140, 'item ~25%: ' + counts.good);
+  assert.ok(counts.ajan + counts.principal > 150, 'bad ~50%');
+});

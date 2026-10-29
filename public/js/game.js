@@ -277,7 +277,7 @@ export class Game {
       oseen.add(o.id);
       let e = this.objs.get(o.id);
       if (!e) {
-        const mesh = o.k === 'soda' ? makeBillboard(sprayTex(), 1, 5.5, 0.4) : makeBillboard(iconTex('clock'), 1, 1.0, 0);
+        const mesh = o.k === 'soda' ? makeBillboard(sprayTex(), 1, 3.3, 1.0) : makeBillboard(iconTex('clock'), 1, 1.0, 0);
         this.dyn.add(mesh);
         e = { mesh, x: o.x, z: o.z, k: o.k };
         this.objs.set(o.id, e);
@@ -288,9 +288,9 @@ export class Game {
       this.dyn.remove(e.mesh); this.objs.delete(id);
       // the soda ends in a big fizzy splash
       if (e.k === 'soda') {
-        const m = makeBillboard(sprayTex(), 1, 5.5, 0.4);
+        const m = makeBillboard(sprayTex(), 1, 3.3, 1.0);
         m.material = m.material.clone(); m.material.transparent = true; m.material.alphaTest = 0.05;
-        m.position.set(e.x, 0.4, e.z);
+        m.position.set(e.x, 1.0, e.z);
         this.dyn.add(m);
         this.splashes.push({ m, t: 0 });
       }
@@ -448,6 +448,7 @@ export class Game {
     this.lastFaceT = this.time;
     const f = $('face');
     f.src = '/assets/' + FACES[i] + '.png';
+    f.classList.remove('show'); void f.offsetWidth; // restart the shake
     f.classList.add('show');
     clearTimeout(this.faceTimer);
     this.faceTimer = setTimeout(() => f.classList.remove('show'), 1100);
@@ -873,6 +874,7 @@ export class Game {
 
     // ---- camera
     this.shake = Math.max(0, this.shake - dt * 2.2);
+    if (this.self.furious && !this.ended && this.app.settings.shake) this.shake = Math.max(this.shake, 0.85); // the ground never stops shaking
     const sh = this.shake * this.shake;
     const hop = (this.jump ? Math.sin(this.jump.hop * Math.PI) * 1.2 : 0) - (this.dip || 0) * 1.4;
     this.dip = Math.max(0, (this.dip || 0) - dt * 6);

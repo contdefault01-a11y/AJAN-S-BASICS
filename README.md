@@ -48,10 +48,10 @@ During an exercise the keys it shows (E, G, letters, Space) belong to the exerci
    any other music while an exercise runs. Leaving the room abandons it.
 5. **COLLECT_CASH / FAST_FOOD** – $1–$4 bills appear; buy 7,000 calories at KFC / Popeyes
    (north of the cafeteria). A full order costs about $20.
-6. **FINAL_ESCAPE** – the screen turns red, `musicescape.wav` loops, AJAN goes berserk. The only way
+6. **FINAL_ESCAPE** – the whole screen turns deep red and the ground shakes without pause, `musicescape.wav` loops, AJAN goes berserk. The only way
    out is the front entrance where you started: out to the garden and the school bus (**VICTORY**).
-   The four corner EXIT doors are fakes – get close and they vanish into a wall covered in cursed
-   drawings of grinning gorillas and red-eyed characters.
+   The four corner EXIT doors are fakes – get close and they vanish into a stretch of wall covered
+   in cursed drawings (giant grinning gorillas, red-eyed characters, scribbles, eyes) – different on each.
 
 Everyone except AJAN (Principal, Playtime, Bully, Gotta Sweep, 1st Prize, Arts and Crafters)
 ignores you until the chase has started; after that they are active and a bit faster than before.
@@ -74,6 +74,7 @@ ignores you until the chase has started; after that they are active and a bit fa
 * **Catboy** – roams slowly, mumbles (`CATBOYPASS/PASS2`, more often the closer you are), and may
   call you over (`CATBOYSEE`). Click him: 50% he drops an item next to him (`CATBOYGOOD`), 50% he
   snitches – AJAN (`CATBOYAJAN`) or the Principal (`CATBOYPRINCIPAL`) appears around the corner.
+  During the cash hunt the odds are 25% a $10 bill, 25% an item, 50% betrayal.
 
 **Red lockers** (8 in the hallways): click one to hide – no character can see or catch you. After
 10 seconds it starts shaking and throws you out, and you can't hide again for 40 seconds. If the
