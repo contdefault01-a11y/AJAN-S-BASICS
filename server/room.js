@@ -10,7 +10,7 @@ import { makeSolidTest, resolveCircle, segmentBlocked } from '../shared/collisio
 import { lineOfSight } from '../shared/nav.js';
 import { makeRng, randomSeed } from '../shared/rng.js';
 import { RANDOM_TYPES, EXERCISE_INFO, generateExercise, validateExercise, validateStep } from './exercises.js';
-import { Ajan, Principal, Playtime, Bully, Sweep, Prize, Arts, Catboy, fwd } from './npcs.js';
+import { Ajan, Principal, Playtime, Bully, Sweep, Prize, Arts, Catboy, Car, fwd } from './npcs.js';
 
 let SHARED_MAP = null;
 export function getMap() {
@@ -52,7 +52,7 @@ export class Room {
     this.cursedExits = new Set(); // fake EXIT doors that turned into cursed walls
     this.cash = 0; this.calories = 0; // cash and calories are shared by the whole team too
     this.ajan = new Ajan(this);
-    this.npcs = [this.ajan, new Principal(this), new Playtime(this), new Bully(this), new Sweep(this), new Prize(this), new Arts(this), new Catboy(this)];
+    this.npcs = [this.ajan, new Principal(this), new Playtime(this), new Bully(this), new Sweep(this), new Prize(this), new Arts(this), new Catboy(this), new Car(this)];
     this.timers = []; // delayed events (catboy betrayals)
     this.npcById = Object.fromEntries(this.npcs.map((n) => [n.id, n]));
     this.cashSpawnedFor = 0;
@@ -132,6 +132,7 @@ export class Room {
     p.pushUntil = 0;
     p.hiding = null;
     p.lockerCdUntil = 0;
+    p.knocked = null;
     p.dirty = true;
     this.sfx('start', this.ajan, p.id);
     if (teleport) {
@@ -153,6 +154,7 @@ export class Room {
       id: p.id, phase: p.phase, ex: [...p.exercisesDone], cash: p.cash, cal: p.calories,
       inv: p.inventory, sel: p.selected,
       det: p.detention ? Math.max(0, p.detention.until - this.t) : 0,
+      knocked: p.knocked ? Math.max(0, p.knocked.until - this.t) : 0,
       hide: p.hiding ? { id: p.hiding.id, left: Math.max(0, p.hiding.until - this.t) } : null,
       lockerCd: Math.max(0, p.lockerCdUntil - this.t),
       jump: p.jump ? { period: p.jump.period, need: p.jump.need } : null,
@@ -186,6 +188,7 @@ export class Room {
     if (Number.isFinite(yaw)) p.yaw = yaw;
     if (p.awaitTseq && m.ts !== p.awaitTseq) return; // still waiting for the client to apply a teleport
     if (p.hiding) return; // inside a locker you cannot move
+    if (p.knocked && this.t > p.knocked.lockFrom) return; // lying on the floor
     p.awaitTseq = 0;
     const dt = Math.max(0.03, this.t - p.lastMoveT);
     p.lastMoveT = this.t;
@@ -291,6 +294,18 @@ export class Room {
     else this.addPickup({ kind: 'item', item, x: p.x, z: p.z, y: 0 });
     p.dirty = true;
     if (msg) this.toast(p, msg);
+  }
+
+  // ------------------------------------------------------------------ the car
+  knockDown(p, car) {
+    const f = { x: -Math.sin(car.yaw), z: -Math.cos(car.yaw) };
+    p.knocked = { until: this.t + 8, lockFrom: this.t + 0.6 };
+    p.cd.car = this.t + 12; // a few seconds of grace after getting back up
+    p.dirty = true;
+    if (p.jump) this.endJumpRope(p, 'caught');
+    this.pushPlayer(p, f.x * 16, f.z * 16, 0.5);
+    this.event({ e: 'carhit' }, p.id);
+    for (const o of this.players.values()) if (o !== p) this.toast(o, p.name + ' got hit by the car!');
   }
 
   // ------------------------------------------------------------------ lockers
@@ -448,6 +463,14 @@ export class Room {
         else if (msg.ajan) this.ajan.mood = msg.ajan;
         if (msg.npc) { const n = this.npcById[msg.npc[0]]; if (n) { n.x = +msg.npc[1]; n.z = +msg.npc[2]; n.path = null; n.hidden = false; if (msg.npc[3]) n.state = msg.npc[3]; } }
         if (msg.freeze != null) this.frozenNpcs = !!msg.freeze;
+        if (msg.final) {
+          this.startChase(p);
+          for (let i = 0; i < EXERCISE_COUNT; i++) this.sharedEx.add(i);
+          if (p.phase === PHASE.INTRO) this.setPhase(p, PHASE.TRAINING);
+          this.setPhase(p, PHASE.COLLECT_CASH);
+          p.calories = CALORIE_GOAL;
+          this.startFinal(p);
+        }
         p.dirty = true;
         return { ok: true };
       }
@@ -831,6 +854,7 @@ export class Room {
       if ((p.phase === PHASE.COLLECT_CASH || p.phase === PHASE.FAST_FOOD) && p.calories >= CALORIE_GOAL) this.startFinal(p);
       if (p.detention && t >= p.detention.until) this.endDetention(p, 'time');
       if (p.hiding && t >= p.hiding.until) this.leaveLocker(p, true);
+      if (p.knocked && t >= p.knocked.until) { p.knocked = null; p.dirty = true; }
       if (p.jump && t - p.jump.start > 45) this.endJumpRope(p, 'timeout');
       if (p.phase === PHASE.FINAL_ESCAPE && p.calories >= CALORIE_GOAL) {
         // the only way out is the front entrance (where the match started), out to the bus
@@ -841,6 +865,7 @@ export class Room {
           if (this.cursedExits.has(e.id) || Math.hypot(e.wx - p.x, e.wz - p.z) > 9) continue;
           this.cursedExits.add(e.id);
           this.event({ e: 'cursed', id: e.id });
+          this.event({ e: 'cursedme' }, p.id);
           this.toast(p, 'The door... is gone. Only the front entrance is real!');
           for (const o of this.players.values()) o.dirty = true;
         }

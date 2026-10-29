@@ -2,6 +2,7 @@
 // interpolated NPCs / remote players as camera-facing sprites, HUD, interactions, item use,
 // exercises, restaurant counter, jump-rope minigame, stomp shake, face reactions and FX.
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   CELL, EYE_H, PLAYER_R, WALK_SPEED, RUN_SPEED, STAMINA_MAX, STAMINA_DRAIN, STAMINA_REGEN,
   INTERACT_DIST, CLIENT_SEND_HZ, ITEMS, RESTAURANTS, CALORIE_GOAL, EXERCISE_COUNT, PHASE, fmtCash,
@@ -18,9 +19,25 @@ const $ = (id) => document.getElementById(id);
 const VOICE = new Set(['start', 'coin', 'principal1', 'principal2', 'playtime1', 'playtime2', 'bullysee', 'bullytake', 'bullypass', 'mad', 'prize', 'sweep', 'sweepout', 'whistle', 'childmusic', 'catboypass', 'catboypass2', 'catboysee', 'catboygood', 'catboyajan', 'catboyprincipal', 'facu', 'prinbul', 'pr1', 'pr2', 'pr3', 'lockcaught']);
 const NPC_LOOK = {
   ajan: { img: 'AJAN', h: 5.6 }, principal: { img: 'PRINCIPAL', h: 5.0 }, playtime: { img: 'PLAYTIME', h: 4.1 },
-  bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 6.7 }, arts: { img: 'ARTS', h: 4.3 },
+  bully: { img: 'BULLY', h: 4.7 }, catboy: { img: 'CATBOY', h: 4.8 }, car: { img: null, h: 2.5 }, sweep: { img: 'SWEEP', h: 4.0 }, prize: { img: 'PRIZE', h: 6.7 }, arts: { img: 'ARTS', h: 4.3 },
 };
 const FACES = ['FACE1', 'FACE2', 'FACE3'];
+// the final-chase car (assets/car.glb): ~5.2 long, 3 wide - fits a 7.5-wide hallway
+let carModel = null;
+function loadCar() {
+  if (!carModel) carModel = new GLTFLoader().loadAsync('/assets/car.glb').then((g) => {
+    const m = g.scene;
+    // the school has no lights: show the car with its own texture colours, unlit
+    m.traverse((o) => { if (o.isMesh) o.material = new THREE.MeshBasicMaterial({ map: o.material.map || null, color: o.material.map ? 0xffffff : o.material.color }); });
+    const box = new THREE.Box3().setFromObject(m), size = box.getSize(new THREE.Vector3());
+    const k = 5.2 / Math.max(size.x, size.z);
+    m.scale.setScalar(k);
+    m.position.y = -box.min.y * k;
+    if (size.x > size.z) m.rotation.y = Math.PI / 2; // long axis along z (the NPC's forward)
+    return m;
+  }).catch(() => null);
+  return carModel;
+}
 const MAD_LEN = 3.7; // seconds of AJANMAD.mp3
 const ACTIVE = new Set([PHASE.INTRO, PHASE.TRAINING, PHASE.COLLECT_CASH, PHASE.FAST_FOOD, PHASE.FINAL_ESCAPE]);
 const fwd = (yaw) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
@@ -231,14 +248,21 @@ export class Game {
       let e = this.npcs.get(n.id);
       if (!e) {
         const look = NPC_LOOK[n.k];
-        const st = spriteTex(look.img);
-        const mesh = makeBillboard(st.tex, st.aspect, look.h);
+        let mesh;
+        if (n.k === 'car') {
+          mesh = new THREE.Group();
+          loadCar().then((m) => { if (m) mesh.add(m.clone()); });
+        } else {
+          const st = spriteTex(look.img);
+          mesh = makeBillboard(st.tex, st.aspect, look.h);
+        }
         this.dyn.add(mesh);
         e = { id: n.id, k: n.k, mesh, look, x: n.x, z: n.z, squash: 0, img: look.img };
         this.npcs.set(n.id, e);
       }
       e.state = n.s;
       e.hidden = !!n.h;
+      e.yaw = n.y;
       e.v = n.v;
       if (n.k === 'ajan') {
         const img = n.m === 'a' ? 'AJANBAD' : 'AJAN';
@@ -347,6 +371,9 @@ export class Game {
       case 'correct': this.me.x = ev.x; this.me.z = ev.z; this.me.vx = this.me.vz = 0; break;
       case 'unhide': if (ev.thrown) { this.shake = 1; this.app.postfx.flash = 0.3; } audio.play('door', { dedupe: false }); break;
       case 'cursed': this.app.postfx.flash = 0.5; this.shake = Math.max(this.shake, 0.6); audio.play('fail', { dedupe: false }); break;
+      case 'cursedme': this.shake = 1.6; audio.play('jump' + (1 + Math.floor(Math.random() * 3)), { dedupe: false, volume: 0.45, bus: 'voice' }); break;
+      case 'carhit': this.startKnock(); break;
+      case 'artsspin': this.startArtsSpin(ev.d || 2.6); break;
       case 'push': this.me.push = { vx: ev.vx, vz: ev.vz, until: this.time + ev.d }; break;
       case 'stamina': this.me.stamina = Math.max(this.me.stamina, ev.v); break;
       case 'pk+': this.addPickup(ev.p); break;
@@ -441,23 +468,89 @@ export class Game {
     setTimeout(() => t.remove(), 3200);
   }
 
-  // Door reactions: only once AJAN is mad (the chase). Two random faces: one, then a second
-  // one a second later, both shaking hard.
+  // Door reactions: only once AJAN is mad (the chase). A random face shakes hard, and after a
+  // second it turns into another one that shakes half as much, in the same spot.
   showFace() {
     if (this.self.story !== 'chase') return;
     this.lastFaceT = this.time;
     const order = FACES.map((k) => [Math.random(), k]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
-    const pop = (el, key) => {
-      el.src = '/assets/' + key + '.png';
-      el.classList.remove('show'); void el.offsetWidth; // restart the shake
-      el.classList.add('show');
+    const a = $('face');
+    const pop = (key, cls) => {
+      a.src = '/assets/' + key + '.png';
+      a.classList.remove('show', 'show2'); void a.offsetWidth; // restart the shake
+      a.classList.add(cls);
     };
-    const [a, b] = [$('face'), $('face2')];
     clearTimeout(this.faceTimer); clearTimeout(this.faceTimer2);
-    b.classList.remove('show');
-    pop(a, order[0]);
-    this.faceTimer2 = setTimeout(() => pop(b, order[1]), 1000);
-    this.faceTimer = setTimeout(() => { a.classList.remove('show'); b.classList.remove('show'); }, 2300);
+    pop(order[0], 'show');
+    this.faceTimer2 = setTimeout(() => pop(order[1], 'show2'), 1000); // turns into another face, half the shake
+    this.faceTimer = setTimeout(() => a.classList.remove('show', 'show2'), 2300);
+  }
+
+  // ------------------------------------------------------------------ car hit
+  startKnock() {
+    if (this.knock) return;
+    this.knock = { t: 0, dir: Math.random() < 0.5 ? -1 : 1, spin: (Math.random() - 0.5) * 5, stage: 0 };
+    this.shake = 1.2;
+  }
+
+  clearKnock() {
+    this.knock = null;
+    this.app.canvas.style.filter = '';
+    $('knockblack').style.opacity = 0;
+    audio.restoreVolume();
+  }
+
+  // Camera pose while knocked down: tumble to the floor, black-out, then slowly get back up.
+  knockPose(dt) {
+    const k = this.knock, black = $('knockblack'), cv = this.app.canvas;
+    if (!k) return { dh: 0, roll: 0, pitch: 0, yaw: 0 };
+    if (this.ended) { this.clearKnock(); return { dh: 0, roll: 0, pitch: 0, yaw: 0 }; }
+    k.t += dt;
+    const t = k.t, low = 0.35 - EYE_H;
+    if (k.stage === 0 && t >= 1) { k.stage = 1; audio.knockout(3, 20); }
+    let f; // 1 = lying on the floor, 0 = standing
+    if (t < 1) f = 1 - (1 - t) * (1 - t);
+    else if (t < 4) f = 1;
+    else f = Math.max(0, 1 - (t - 4) / 4); // get up over 4 s
+    black.style.opacity = t < 0.8 ? 0 : t < 1 ? (t - 0.8) / 0.2 : t < 4 ? 1 : Math.max(0, 1 - (t - 4) / 1.5);
+    const blur = t < 4 ? 0 : Math.max(0, 12 * (1 - (t - 4) / 10)); // blurry for 10 s after waking
+    cv.style.filter = blur > 0.05 ? 'blur(' + blur.toFixed(1) + 'px)' : '';
+    if (t > 24) this.clearKnock();
+    const tumble = t < 1 ? Math.sin(t * 9) * (1 - t) : 0;
+    return {
+      dh: low * f,
+      roll: k.dir * 1.35 * f + tumble * 0.8,
+      pitch: (t < 1 ? -0.9 * Math.sin(t * Math.PI) : 0.25 * f) + tumble * 0.5,
+      yaw: k.spin * Math.min(1, t) * f,
+    };
+  }
+
+  // ------------------------------------------------------------------ Arts and Crafters spin
+  startArtsSpin(d) {
+    if (this.artsSpin) return;
+    const st = spriteTex('ARTS');
+    const meshes = [];
+    for (let i = 0; i < 8; i++) { const m = makeBillboard(st.tex, st.aspect, 3.4, 0.3); m.visible = false; this.dyn.add(m); meshes.push(m); }
+    this.artsSpin = { t: 0, d, meshes };
+    this.shake = Math.max(this.shake, 0.6);
+  }
+
+  updateArtsSpin(dt) {
+    const s = this.artsSpin;
+    if (!s) return;
+    s.t += dt;
+    const k = s.t / s.d;
+    if (k >= 1) { for (const m of s.meshes) this.dyn.remove(m); this.artsSpin = null; return; }
+    // more and more socks circle you, faster and closer
+    const n = Math.min(s.meshes.length, 1 + Math.floor(k * 9));
+    const R = 3.4 - k * 1.4, w = 2 + k * 7;
+    const cx = this.camera.position.x, cz = this.camera.position.z;
+    s.meshes.forEach((m, i) => {
+      m.visible = i < n;
+      const a = s.t * w + (i / s.meshes.length) * Math.PI * 2;
+      m.position.set(this.me.x + Math.cos(a) * R, 0.3 + Math.sin(s.t * 6 + i) * 0.3, this.me.z + Math.sin(a) * R);
+      m.rotation.y = Math.atan2(cx - m.position.x, cz - m.position.z);
+    });
   }
 
   // ------------------------------------------------------------------ interaction
@@ -783,7 +876,7 @@ export class Game {
     $('scare-img').src = '/assets/JUMPSCARE' + n + '.png';
     $('scare').classList.remove('hidden');
     $('hud').classList.add('hidden');
-    audio.play('jump' + (1 + Math.floor(Math.random() * 3)), { dedupe: false, volume: 1.6, bus: 'voice' });
+    audio.play('jump' + (1 + Math.floor(Math.random() * 3)), { dedupe: false, volume: 0.8, bus: 'voice' });
     audio.play('scare', { dedupe: false, volume: 1.2 });
     const pics = this.app.randomImages || [];
     setTimeout(() => {
@@ -826,7 +919,7 @@ export class Game {
     this.time += dt;
     const me = this.me;
     const active = ACTIVE.has(this.self.phase) && !this.ended;
-    const frozen = !active || !!this.ui || !!this.jump || !!this.self.hide || (this.paused && this.solo) || !!(this.ex && this.ex.frozen);
+    const frozen = !active || !!this.ui || !!this.jump || !!this.self.hide || !!(this.knock && this.knock.t < 8) || (this.paused && this.solo) || !!(this.ex && this.ex.frozen);
     if (this.ex) this.ex.tick(dt, this.keys);
 
     // ---- movement
@@ -891,8 +984,10 @@ export class Game {
     this.fovKick = Math.max(0, (this.fovKick || 0) - dt * 18);
     const fov = this.app.settings.fov + this.fovKick;
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
-    this.camera.position.set(me.x + (Math.random() - 0.5) * sh * 0.5, EYE_H + hop + (Math.random() - 0.5) * sh * 0.6, me.z + (Math.random() - 0.5) * sh * 0.5);
-    this.camera.rotation.set((Math.random() - 0.5) * sh * 0.04, this.viewYaw(), (Math.random() - 0.5) * sh * 0.05, 'YXZ');
+    const kn = this.knockPose(dt);
+    this.camera.position.set(me.x + (Math.random() - 0.5) * sh * 0.5, EYE_H + hop + kn.dh + (Math.random() - 0.5) * sh * 0.6, me.z + (Math.random() - 0.5) * sh * 0.5);
+    this.camera.rotation.set((Math.random() - 0.5) * sh * 0.04 + kn.pitch, this.viewYaw() + kn.yaw, (Math.random() - 0.5) * sh * 0.05 + kn.roll, 'YXZ');
+    this.updateArtsSpin(dt);
     audio.setListener(me.x, me.z, me.yaw);
     audio.update();
 
@@ -914,6 +1009,14 @@ export class Game {
     for (const e of this.npcs.values()) {
       e.mesh.visible = !e.hidden;
       e.mesh.position.set(e.x, e.look.y || 0, e.z);
+      if (e.k === 'car') {
+        // a solid 3D car that turns to face where it drives; its engine is heard only up close
+        e.ry = e.ry == null ? e.yaw : e.ry + Math.atan2(Math.sin(e.yaw - e.ry), Math.cos(e.yaw - e.ry)) * Math.min(1, dt * 8);
+        e.mesh.rotation.y = e.ry + Math.PI;
+        if (!e.hidden && !this.ended) audio.play('carengine', { loop: true, dedupe: 'carengine', range: 40, bus: 'sfx', getPos: () => ({ x: e.x, z: e.z }) });
+        else audio.stop('carengine');
+        continue;
+      }
       e.squash = Math.max(0, e.squash - dt * 5);
       const bob = e.k === 'ajan' ? 1 - e.squash * 0.12 : 1 + Math.sin(this.time * 9 + e.x) * 0.015 * (e.state === 'idle' || e.state === 'closet' ? 0 : 1);
       e.mesh.scale.set(e.k === 'ajan' ? 1 + e.squash * 0.08 : 1, bob, 1);
@@ -1020,6 +1123,8 @@ export class Game {
 
   dispose() {
     if (this.ex) { this.ex.dispose(); this.ex = null; }
+    this.clearKnock();
+    audio.stop('carengine');
     audio.stopMusic();
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);

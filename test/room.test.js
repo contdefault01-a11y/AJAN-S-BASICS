@@ -608,3 +608,46 @@ test('multiplayer escape: everyone must be out the front doors at the same time'
   assert.equal(p.phase, PHASE.VICTORY);
   assert.equal(q.phase, PHASE.VICTORY);
 });
+
+test('final-chase car: hidden until the red chase, knocks players down, AJAN slows while they are down', () => {
+  const { room, p } = mk();
+  room.startChase(p);
+  p.phase = PHASE.TRAINING;
+  const car = room.npcById.car;
+  room.frozenNpcs = false;
+  run(room, 0.5);
+  assert.equal(car.hidden, true, 'no car before the red chase');
+  room.furious = true;
+  car.update(0.05);
+  assert.equal(car.hidden, false);
+  car.x = p.x + 1; car.z = p.z;
+  car.update(0.05);
+  assert.ok(p.knocked, 'hit by the car');
+  assert.ok(room.outbox.some((o) => o.ev.e === 'carhit' && o.to === p.id));
+  // movement is locked after the first moment
+  room.t += 1;
+  const before = { x: p.x, z: p.z };
+  room.handleMove(p, { x: p.x + 1, z: p.z, yaw: 0, ts: p.tseq });
+  assert.deepEqual({ x: p.x, z: p.z }, before);
+  room.t += 8; room.tick(0.05);
+  assert.equal(p.knocked, null, 'back up after 8 s');
+});
+
+test('arts and crafters in the red chase: passing him spins the socks around you, 70% teleport', () => {
+  let teleports = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const { room, p } = mk(seed);
+    room.startChase(p);
+    p.phase = PHASE.FINAL_ESCAPE;
+    room.furious = true;
+    const a = room.npcById.arts;
+    a.hidden = false; a.state = 'peek';
+    a.x = p.x + 3; a.z = p.z;
+    const start = { x: p.x, z: p.z };
+    a.update(0.05);
+    assert.ok(room.outbox.some((o) => o.ev.e === 'artsspin' && o.to === p.id));
+    room.t += 2.7; room.tick(0.05);
+    if (Math.hypot(p.x - start.x, p.z - start.z) > 20) teleports++;
+  }
+  assert.ok(teleports > 18 && teleports < 38, 'about 70%: ' + teleports + '/40');
+});

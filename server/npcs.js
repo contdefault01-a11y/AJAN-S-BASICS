@@ -284,7 +284,8 @@ export class Ajan extends Npc {
       if (!this.path || !this.path.length) {
         if (this.goal) this.setGoal(this.goal.x, this.goal.z, true);
       }
-      moving = this.followPath(this.lungeSpeed * dt);
+      const dazed = [...room.players.values()].some((p) => p.knocked && room.isActive(p));
+      moving = this.followPath(this.lungeSpeed * (dazed ? 0.3 : 1) * dt);
     }
     if (this.checkStuck(dt, !!(this.path && this.path.length))) {
       if (this.goal) this.setGoal(this.goal.x, this.goal.z, true);
@@ -869,6 +870,18 @@ export class Arts extends Npc {
     if (t >= this.nextSong) { this.nextSong = t + 100 + room.rng() * 100; room.sfx('childmusic', this, '*'); }
     if (!this.hidden && this.applyPush(dt)) return;
 
+    if (room.furious && !this.hidden && this.state !== 'charge') {
+      for (const p of all) {
+        if (p.detention || p.jump || t < (p.cd.artsSpin || 0) || !this.canSee(p, 9)) continue;
+        p.cd.artsSpin = t + 25;
+        room.event({ e: 'artsspin', d: 2.6 }, p.id);
+        room.sfx('arts', this, p.id);
+        room.timers.push({ at: t + 2.6, fn: () => { if (room.isActive(p) && room.rng() < 0.7) room.artsTeleport(p); } });
+        this.goAway();
+        return;
+      }
+    }
+
     if (this.state === 'hidden') {
       this.hidden = true;
       if (t < this.cooldownUntil || t < this.nextPeek || !all.length) return;
@@ -995,5 +1008,69 @@ export class Catboy extends Npc {
     }
     this.followPath(2.5 * dt); // slow stroll
     if (this.checkStuck(dt, true)) this.goal = null;
+  }
+}
+
+
+// ------------------------------------------------------------------------------------------
+// The car: only exists in the final red chase. Roams the hallways fast like a runaway 1st Prize;
+// if it hits you, you are knocked flat for a while.
+export class Car extends Npc {
+  constructor(room) {
+    super(room, 'car', ...SPAWNS.prize, 1.2);
+    this.hidden = true;
+    this.state = 'parked';
+    this.pushable = false;
+    this.target = null;
+    this.thinkAt = 0;
+    const halls = new Set(this.map.hallCells.map(([cx, cz]) => cz * this.map.W + cx));
+    this.passable = (i) => this.map.nav[i] === 1 && halls.has(i); // hallways only
+  }
+
+  update(dt) {
+    const room = this.room, t = room.t;
+    if (!room.furious) { this.hidden = true; return; }
+    if (this.state === 'parked') {
+      // appears somewhere far away from everyone
+      let best = null, bd = -1;
+      for (let i = 0; i < 40; i++) {
+        const [cx, cz] = this.map.hallCells[Math.floor(room.rng() * this.map.hallCells.length)];
+        const c = cellCenter(cx, cz);
+        let near = 1e9;
+        for (const p of room.players.values()) near = Math.min(near, Math.hypot(p.x - c.x, p.z - c.z));
+        if (near > bd) { bd = near; best = c; }
+      }
+      this.x = best.x; this.z = best.z;
+      this.hidden = false;
+      this.state = 'roam';
+    }
+    if (this.applyPush(dt)) return;
+    if (t >= this.thinkAt) {
+      this.thinkAt = t + 0.3;
+      let best = null, bd = 30;
+      for (const p of room.players.values()) {
+        if (!room.canInteract(p) || p.knocked || p.detention || t < (p.cd.car || 0)) continue;
+        const d = dist(this, p);
+        if (d < bd && this.canSee(p, 30)) { bd = d; best = p; }
+      }
+      this.target = best ? best.id : null;
+    }
+    const p = this.target && room.players.get(this.target);
+    if (p) { this.setGoal(p.x, p.z); this.followPath(17 * dt); }
+    else {
+      if (this.atGoal(2) || !this.goal) { const g = this.randomHallGoal(25); this.setGoal(g.x, g.z, true); }
+      this.followPath(13 * dt);
+    }
+    for (const q of room.players.values()) {
+      if (!room.canInteract(q) || q.knocked || q.detention || t < (q.cd.car || 0) || dist(this, q) > 2.6) continue;
+      room.knockDown(q, this);
+    }
+    if (this.checkStuck(dt, true)) this.goal = null;
+  }
+
+  snapshot() {
+    const s = super.snapshot();
+    if (!this.hidden) s.b = [this.x - 1.4, this.x + 1.4, this.z - 1.4, this.z + 1.4].map((v) => +v.toFixed(2));
+    return s;
   }
 }
