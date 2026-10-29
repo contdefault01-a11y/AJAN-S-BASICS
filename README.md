@@ -106,7 +106,7 @@ Everything lives in `/assets` and is used as-is:
 * `assets/random/`: item icons (scissors, quarter, BSODA, keys, zesty bar, door lock, BSED),
   cafeteria and restaurant food trays (`Food.webp`), desk clutter (notebooks, papers, pencils),
   globes, the EXIT sign and the school bus.
-* Door reactions: `FACE1.png`, `FACE2.png`, `FACE3.png` (FACE3 also when AJAN gets mad).
+* Door reactions (only once the chase has started): two random shaking faces from `FACE1-3.png`, one after the other (FACE3 also when AJAN gets mad).
 * Looks: `REF1.png` (entrance hall), `REF3.png` (cafeteria), `REFCLASS.png` (classrooms: white
   brick, dark blue carpet, chunky wooden desks), `REFERENCEPRINCIPALOFFICE.webp` (office: green
   band, blue carpet, wooden desks with globes), `MENU.png` / `MENUREF.png` (menu).
