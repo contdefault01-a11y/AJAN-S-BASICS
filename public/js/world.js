@@ -179,8 +179,9 @@ export function buildWorld(map) {
       m.rotation.y = Math.atan2(nx, nz);
       root.add(m);
       // the cursed wall that replaces it when you get close in the final escape
-      const cm = new THREE.Mesh(new THREE.PlaneGeometry(CELL, DOOR_H + 0.6), new THREE.MeshBasicMaterial({ map: cursedWallTex() }));
-      cm.position.set(m.position.x + nx * 0.02, (DOOR_H + 0.6) / 2, m.position.z + nz * 0.02);
+      // three cells wide and floor to ceiling: much bigger than the door it replaces
+      const cm = new THREE.Mesh(new THREE.PlaneGeometry(CELL * 3, WALL_H), new THREE.MeshBasicMaterial({ map: cursedWallTex(map.exits.indexOf(ex) + 1) }));
+      cm.position.set(m.position.x + nx * (WALL_T / 2 + 0.03), WALL_H / 2, m.position.z + nz * (WALL_T / 2 + 0.03)); // in front of the wall face
       cm.rotation.y = m.rotation.y;
       cm.visible = false;
       root.add(cm);

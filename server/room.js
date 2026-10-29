@@ -350,7 +350,7 @@ export class Room {
     principal.x = dc.x; principal.z = dc.z + 3; principal.path = null; principal.goal = null;
     this.sfx('principal2', principal, p.id);
     // once he is done talking and walks off, he mutters one of his lines
-    this.timers.push({ at: this.t + 5.6, fn: () => this.sfx(this.rng.pick(['pr1', 'pr2', 'pr3']), principal, '') });
+    this.timers.push({ at: this.t + 5.6, fn: () => this.sfx(this.rng.pick(['pr1', 'pr2', 'pr3']), principal, p.id) });
     this.toast(p, 'Detention for you. ' + dur + ' seconds!');
     this.noise(spot.x, spot.z, 9999, 2); // AJAN hears where you are
     p.dirty = true;
@@ -709,11 +709,20 @@ export class Room {
     if (t < cb.cooldownUntil) return { ok: false, err: 'The catboy ignores you for now.' };
     cb.cooldownUntil = t + 40;
     cb.state = 'roam';
-    if (this.rng() < 0.5) {
+    const dx = p.x - cb.x, dz = p.z - cb.z, d = Math.hypot(dx, dz) || 1;
+    const drop = { x: cb.x + (dx / d) * 1.2, z: cb.z + (dz / d) * 1.2, y: 0 };
+    const roll = this.rng();
+    // on the cash hunt he can also hand out a $10 bill: 25% cash, 25% item, 50% betrayal
+    const cashHunt = p.phase === PHASE.COLLECT_CASH || p.phase === PHASE.FAST_FOOD;
+    if (cashHunt && roll < 0.25) {
+      this.addPickup({ kind: 'cash', value: 1000, ...drop });
+      this.sfx('catboygood', cb, p.id);
+      return { ok: true, outcome: 'cash' };
+    }
+    if (roll < 0.5) {
       // GOOD: an item drops next to him in the hallway
       const item = this.rng.pick(['scissors', 'soda', 'bar', 'coin', 'keys', 'lock', 'sneakers', 'clock', 'energy']);
-      const dx = p.x - cb.x, dz = p.z - cb.z, d = Math.hypot(dx, dz) || 1;
-      this.addPickup({ kind: 'item', item, x: cb.x + (dx / d) * 1.2, z: cb.z + (dz / d) * 1.2, y: 0 });
+      this.addPickup({ kind: 'item', item, ...drop });
       this.sfx('catboygood', cb, p.id);
       return { ok: true, outcome: 'good' };
     }

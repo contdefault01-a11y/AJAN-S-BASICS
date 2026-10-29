@@ -531,52 +531,85 @@ export function sprayTex() {
   }), { repeat: false }));
 }
 
-// What a fake EXIT turns into: wall with cursed crayon drawings of smiling gorillas and the
-// school's characters staring with red eyes.
-export function cursedWallTex() {
-  return cached('cursed', () => toTex(canvas(128, 280, (g) => {
+// What a fake EXIT turns into: a whole stretch of wall covered in cursed crayon art. Every exit
+// gets its own mix (seed): huge scribbles, a giant grinning gorilla, staring eyes, spirals and
+// the school's characters with red eyes and wide grins.
+export function cursedWallTex(seed = 1) {
+  return cached('cursed:' + seed, () => toTex(canvas(384, 384, (g) => {
+    const W = 384, H = 384;
     const brick = SURFACES.brick();
-    for (let y = 280; y > -128; y -= 128) g.drawImage(brick, 0, y - 128, 128, 128); // same brick scale as the walls
-    const r = seeded(666);
-    const faces = [];
-    const keys = ['AJAN', 'FACE3', 'PRINCIPAL', 'FACE1', 'BULLY', 'PLAYTIME', 'FACE2', 'ARTS', 'CATBOY', 'SWEEP'];
-    let i = 0;
-    for (let y = 6; y < 260; y += 50) {
-      for (let x = (i % 2) * 18 + 4; x < 112; x += 58) {
-        const img = getImage(keys[i++ % keys.length]);
-        const s = 40 + r() * 16;
-        if (img) {
-          g.save(); g.translate(x + s / 2, y + s / 2); g.rotate((r() - 0.5) * 0.5);
-          g.filter = 'grayscale(0.7) contrast(2) brightness(0.8)';
-          g.globalAlpha = 0.85;
-          const a = (img.width || 1) / (img.height || 1);
-          g.drawImage(img, -s * Math.min(1, a) / 2, -s / Math.max(1, a) / 2, s * Math.min(1, a), s / Math.max(1, a));
-          g.restore();
-        }
-        faces.push({ x: x + s / 2, y: y + s / 2, s });
+    for (let y = H; y > -128; y -= 128) for (let x = 0; x < W; x += 128) g.drawImage(brick, x, y - 128, 128, 128); // same brick scale as the walls
+    const r = seeded(seed * 7919 + 13);
+    const pick = (a) => a[Math.floor(r() * a.length)];
+    const crayon = () => pick(['#b00000', '#1a1a1a', '#5a0000', '#2b0a3d', '#7a1010']);
+    const scribble = (n, w) => {
+      g.lineCap = 'round';
+      for (let k = 0; k < n; k++) {
+        g.strokeStyle = crayon(); g.lineWidth = w * (0.5 + r());
+        g.beginPath(); let x = r() * W, y = r() * H; g.moveTo(x, y);
+        for (let j = 0; j < 8; j++) { x += (r() - 0.5) * 160; y += (r() - 0.5) * 160; g.lineTo(x, y); }
+        g.stroke();
       }
+    };
+    const spiral = (cx, cy, R) => {
+      g.strokeStyle = crayon(); g.lineWidth = 3; g.beginPath();
+      for (let a = 0; a < 26; a += 0.2) { const d = (a / 26) * R; g.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d); }
+      g.stroke();
+    };
+    const eyes = (cx, cy, s) => {
+      for (const ex of [-1, 1]) {
+        g.fillStyle = '#f4f0e8'; g.beginPath(); g.ellipse(cx + ex * s, cy, s * 0.8, s * 0.55, 0, 0, 7); g.fill();
+        g.fillStyle = '#ff0000'; g.beginPath(); g.arc(cx + ex * s, cy, s * 0.32, 0, 7); g.fill();
+        g.fillStyle = '#000'; g.beginPath(); g.arc(cx + ex * s, cy, s * 0.12, 0, 7); g.fill();
+      }
+    };
+    const grin = (cx, cy, s) => {
+      g.strokeStyle = '#c00000'; g.lineWidth = Math.max(2, s * 0.08);
+      g.beginPath(); g.arc(cx, cy, s, 0.12 * Math.PI, 0.88 * Math.PI); g.stroke();
+      g.strokeStyle = '#300'; g.lineWidth = Math.max(1, s * 0.03);
+      for (let t = -4; t <= 4; t++) { const a = Math.PI / 2 + t * 0.16; g.beginPath(); g.moveTo(cx + Math.cos(a) * s * 0.78, cy + Math.sin(a) * s * 0.78); g.lineTo(cx + Math.cos(a) * s * 1.1, cy + Math.sin(a) * s * 1.1); g.stroke(); }
+    };
+    const gorilla = (cx, cy, s) => {
+      // a crude crayon gorilla head, smiling far too wide
+      g.fillStyle = '#1b1b1b'; g.strokeStyle = '#000'; g.lineWidth = 4;
+      g.beginPath(); g.arc(cx, cy, s, 0, 7); g.fill();
+      g.beginPath(); g.arc(cx - s * 0.95, cy - s * 0.2, s * 0.3, 0, 7); g.arc(cx + s * 0.95, cy - s * 0.2, s * 0.3, 0, 7); g.fill();
+      g.fillStyle = '#5b4636'; g.beginPath(); g.ellipse(cx, cy + s * 0.3, s * 0.65, s * 0.5, 0, 0, 7); g.fill();
+      eyes(cx, cy - s * 0.3, s * 0.22);
+      grin(cx, cy + s * 0.15, s * 0.5);
+    };
+    const character = (key, cx, cy, s) => {
+      const img = getImage(key);
+      if (!img) return;
+      g.save(); g.translate(cx, cy); g.rotate((r() - 0.5) * 0.6);
+      g.filter = pick(['grayscale(0.8) contrast(2.2) brightness(0.7)', 'contrast(2) saturate(0.3) sepia(0.6)', 'invert(0.85) contrast(1.6)']);
+      g.globalAlpha = 0.9;
+      const a = (img.width || 1) / (img.height || 1);
+      g.drawImage(img, -s * Math.min(1, a) / 2, -s / Math.max(1, a) / 2, s * Math.min(1, a), s / Math.max(1, a));
+      g.restore();
+      eyes(cx, cy - s * 0.12, s * 0.07);
+      grin(cx, cy + s * 0.05, s * 0.2);
+    };
+    const chars = ['AJAN', 'AJANBAD', 'FACE1', 'FACE2', 'FACE3', 'PRINCIPAL', 'BULLY', 'PLAYTIME', 'ARTS', 'CATBOY', 'SWEEP', 'PRIZE'];
+
+    scribble(6 + Math.floor(r() * 6), 6);           // huge angry lines behind everything
+    const style = seed % 4;
+    if (style === 0) gorilla(W / 2, H * 0.45, 120);  // one giant gorilla
+    else if (style === 1) character(pick(chars), W / 2, H * 0.45, 300); // one giant cursed character
+    else if (style === 2) for (let k = 0; k < 4; k++) spiral(r() * W, r() * H, 60 + r() * 80); // spirals
+    else for (let k = 0; k < 9; k++) eyes(30 + r() * (W - 60), 30 + r() * (H - 60), 10 + r() * 22); // eyes everywhere
+    const n = 3 + Math.floor(r() * 4);
+    for (let k = 0; k < n; k++) {
+      if (r() < 0.45) gorilla(40 + r() * (W - 80), 40 + r() * (H - 80), 22 + r() * 30);
+      else character(pick(chars), 40 + r() * (W - 80), 40 + r() * (H - 80), 70 + r() * 70);
     }
-    // crayon over every picture: glowing red eyes and a wide grin
-    for (const f of faces) {
-      g.fillStyle = '#ff1010';
-      for (const ex of [-0.17, 0.17]) { g.beginPath(); g.arc(f.x + ex * f.s, f.y - 0.1 * f.s, 3.2, 0, 7); g.fill(); }
-      g.strokeStyle = '#c00000'; g.lineWidth = 2.5;
-      g.beginPath(); g.arc(f.x, f.y + 0.02 * f.s, 0.25 * f.s, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
-      g.strokeStyle = '#300'; g.lineWidth = 1;
-      for (let t = -3; t <= 3; t++) { const a = Math.PI / 2 + t * 0.16; g.beginPath(); g.moveTo(f.x + Math.cos(a) * 0.2 * f.s, f.y + Math.sin(a) * 0.2 * f.s); g.lineTo(f.x + Math.cos(a) * 0.29 * f.s, f.y + Math.sin(a) * 0.29 * f.s); g.stroke(); }
+    scribble(4, 3);
+    for (let k = 0; k < 3; k++) eyes(r() * W, r() * H, 6 + r() * 6);
+    g.fillStyle = '#a00000'; g.textAlign = 'center';
+    for (const t of [pick(['NO WAY OUT', 'GO BACK', 'HE SEES YOU', 'STAY', 'FRONT DOOR?']), pick(['AJAN IS HERE', 'RUN', 'SMILE', 'TOO LATE'])]) {
+      g.save(); g.translate(40 + r() * (W - 80), 40 + r() * (H - 80)); g.rotate((r() - 0.5) * 0.5);
+      g.font = 'bold ' + Math.floor(20 + r() * 26) + 'px Comic Sans MS, sans-serif';
+      g.fillText(t, 0, 0); g.restore();
     }
-    // smiling crayon gorillas scribbled between them
-    for (let k = 0; k < 4; k++) {
-      const x = 16 + r() * 96, y = 20 + r() * 240;
-      g.strokeStyle = '#1a1a1a'; g.lineWidth = 2;
-      g.beginPath(); g.arc(x, y, 11, 0, 7); g.stroke();
-      g.beginPath(); g.arc(x - 9, y - 7, 4, 0, 7); g.arc(x + 9, y - 7, 4, 0, 7); g.stroke();
-      g.fillStyle = '#ff0000'; g.fillRect(x - 5, y - 3, 3, 3); g.fillRect(x + 2, y - 3, 3, 3);
-      g.strokeStyle = '#c00000'; g.beginPath(); g.arc(x, y + 2, 6, 0.1 * Math.PI, 0.9 * Math.PI); g.stroke();
-    }
-    g.fillStyle = '#b00000'; g.font = 'bold 15px Comic Sans MS, sans-serif';
-    g.save(); g.translate(64, 140); g.rotate(-0.12); g.textAlign = 'center';
-    g.fillText('NO WAY OUT', 0, 0); g.fillText('GO BACK', 4, 100);
-    g.restore();
   }), { repeat: false }));
 }
