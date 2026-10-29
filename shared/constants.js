@@ -146,7 +146,8 @@ export const AUDIO = Object.freeze({
   prinbul: 'prinbul.mp3',      // Principal: he saw the Bully steal
   pr1: 'pr1.mp3', pr2: 'pr2.mp3', pr3: 'pr3.mp3', // Principal leaving detention
   lockcaught: 'lock.mp3',
-  door: 'dooropen.mp3',        // every door that opens      // Principal: he saw you climb into a locker
+  door: 'dooropen.mp3',        // every door that opens
+  carengine: 'carengine.mp3',  // the final-chase car's engine loop      // Principal: he saw you climb into a locker
   // music (looping, quieter than voices)
   menu: 'musicmenu.wav',
   music1: 'music1.wav',

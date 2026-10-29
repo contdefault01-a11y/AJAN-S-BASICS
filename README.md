@@ -72,6 +72,12 @@ ignores you until the chase has started; after that they are active and a bit fa
 * **Arts and Crafters** (the sock) – every now and then his `childmusic.wav` plays for the whole
   school; after your 7th exercise, staring at him makes him charge and teleport you.
 * The **Principal** also blows his `whistle.mp3` now and then – everyone hears it.
+* **The car** (`car.glb`, only in the red final chase) – races through the hallways (engine loop
+  `carengine.mp3`, heard only close by). If it hits you, you tumble to the floor, black out and go
+  deaf for 3 s, then wake up blurry with a ringing buzz while your hearing fades back over 20 s.
+  AJAN runs 70% slower while someone is down.
+* In the red chase, passing **Arts and Crafters** makes his socks circle around you – 70% chance
+  he teleports you somewhere.
 * **Catboy** – roams slowly, mumbles (`CATBOYPASS/PASS2`, more often the closer you are), and may
   call you over (`CATBOYSEE`). Click him: 50% he drops an item next to him (`CATBOYGOOD`), 50% he
   snitches – AJAN (`CATBOYAJAN`) or the Principal (`CATBOYPRINCIPAL`) appears around the corner.
@@ -86,7 +92,7 @@ In multiplayer, exercise progress, cash and calories are shared by every player 
 ### Getting caught / winning
 
 * Caught: the game freezes on the exact frame, a random `JUMPSCARE1-3.png` fills most of
-  the screen with a random (extremely loud) `jump1-3.wav`, then a black screen with a random picture
+  the screen with a random (loud) `jump1-3.wav`, then a black screen with a random picture
   from `assets/random/` for 3 seconds, then the main menu.
 * Escaped: `WIN.wav` and the `congratulations.png` screen.
 

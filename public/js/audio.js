@@ -45,6 +45,34 @@ export class AudioManager {
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  // Car hit: hearing cuts out, then after `off` seconds fades back in over `back` seconds under a
+  // loud ringing buzz.
+  knockout(off, back) {
+    if (!this.ctx) return;
+    const c = this.ctx, now = c.currentTime, g = this.master.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(0, now + 0.15);
+    g.setValueAtTime(0, now + off);
+    g.linearRampToValueAtTime(this.settings.master, now + off + back);
+    const buzz = c.createGain();
+    buzz.gain.setValueAtTime(0, now + off);
+    buzz.gain.linearRampToValueAtTime(0.35 * this.settings.master, now + off + 0.3);
+    buzz.gain.linearRampToValueAtTime(0, now + off + back);
+    buzz.connect(c.destination);
+    for (const [f, type] of [[3200, 'sine'], [3270, 'sine'], [110, 'sawtooth']]) {
+      const o = c.createOscillator(); o.type = type; o.frequency.value = f;
+      const og = c.createGain(); og.gain.value = type === 'sawtooth' ? 0.25 : 0.6;
+      o.connect(og); og.connect(buzz); o.start(now + off); o.stop(now + off + back + 0.1);
+    }
+  }
+
+  restoreVolume() {
+    if (!this.ctx) return;
+    this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.master.gain.value = this.settings.master;
+  }
+
   applyVolumes() {
     if (!this.ctx) return;
     this.master.gain.value = this.settings.master;
