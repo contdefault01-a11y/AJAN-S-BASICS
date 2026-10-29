@@ -11,7 +11,7 @@ import { makeSolidTest, moveCircle, resolveCircle } from '/shared/collision.js';
 import { lineOfSight } from '/shared/nav.js';
 import { audio } from './audio.js';
 import { net } from './net.js';
-import { spriteTex, labelTex, iconTex, iconDataURL, sprayTex, drawTimer } from './textures.js';
+import { spriteTex, labelTex, iconTex, iconDataURL, sprayTex, drawTimer, imageTex } from './textures.js';
 import { ExerciseRunner } from './exercise.js';
 
 const $ = (id) => document.getElementById(id);
@@ -441,17 +441,23 @@ export class Game {
     setTimeout(() => t.remove(), 3200);
   }
 
+  // Door reactions: only once AJAN is mad (the chase). Two random faces: one, then a second
+  // one a second later, both shaking hard.
   showFace() {
-    let i;
-    do i = Math.floor(Math.random() * FACES.length); while (i === this.lastFace && FACES.length > 1);
-    this.lastFace = i;
+    if (this.self.story !== 'chase') return;
     this.lastFaceT = this.time;
-    const f = $('face');
-    f.src = '/assets/' + FACES[i] + '.png';
-    f.classList.remove('show'); void f.offsetWidth; // restart the shake
-    f.classList.add('show');
-    clearTimeout(this.faceTimer);
-    this.faceTimer = setTimeout(() => f.classList.remove('show'), 1100);
+    const order = FACES.map((k) => [Math.random(), k]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    const pop = (el, key) => {
+      el.src = '/assets/' + key + '.png';
+      el.classList.remove('show'); void el.offsetWidth; // restart the shake
+      el.classList.add('show');
+    };
+    const [a, b] = [$('face'), $('face2')];
+    clearTimeout(this.faceTimer); clearTimeout(this.faceTimer2);
+    b.classList.remove('show');
+    pop(a, order[0]);
+    this.faceTimer2 = setTimeout(() => pop(b, order[1]), 1000);
+    this.faceTimer = setTimeout(() => { a.classList.remove('show'); b.classList.remove('show'); }, 2300);
   }
 
   // ------------------------------------------------------------------ interaction
@@ -893,6 +899,18 @@ export class Game {
     // ---- sprites face the camera (cylindrical billboards)
     const cx = this.camera.position.x, cz = this.camera.position.z;
     const face = (m) => { m.rotation.y = Math.atan2(cx - m.position.x, cz - m.position.z); };
+    const aj = this.npcs.get('ajan');
+    const showCoin = !!aj && !aj.hidden && this.self.story === 'coin' && !this.self.coin;
+    if (showCoin && !this.coinMesh) { this.coinMesh = makeBillboard(imageTex('random/QuarterIcon_Large'), 1, 1.1); this.dyn.add(this.coinMesh); }
+    if (this.coinMesh) {
+      this.coinMesh.visible = showCoin;
+      if (showCoin) {
+        // beside his hand, toward the camera's right
+        const dx = cx - aj.x, dz = cz - aj.z, l = Math.hypot(dx, dz) || 1;
+        this.coinMesh.position.set(aj.x + (dz / l) * 1.7 + (dx / l) * 0.4, 2.6 + Math.sin(this.time * 3) * 0.15, aj.z - (dx / l) * 1.7 + (dz / l) * 0.4);
+        face(this.coinMesh);
+      }
+    }
     for (const e of this.npcs.values()) {
       e.mesh.visible = !e.hidden;
       e.mesh.position.set(e.x, e.look.y || 0, e.z);
